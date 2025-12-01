@@ -163,7 +163,7 @@ pub fn (mut d Decompresser) find_filename() bool {
 	}
 
 	// Read filename (null-terminated)
-	d.filename = ''
+	mut filename_bytes := []u8{}
 	for {
 		c := d.input.get()
 		if c < 0 {
@@ -177,11 +177,12 @@ pub fn (mut d Decompresser) find_filename() bool {
 			d.state = decomp_state_start
 			return false
 		}
-		d.filename += rune(c).str()
+		filename_bytes << u8(c)
 	}
+	d.filename = filename_bytes.bytestr()
 
 	// Read comment (null-terminated)
-	d.comment = ''
+	mut comment_bytes := []u8{}
 	for {
 		c := d.input.get()
 		if c < 0 {
@@ -190,8 +191,9 @@ pub fn (mut d Decompresser) find_filename() bool {
 		if c == 0 {
 			break
 		}
-		d.comment += rune(c).str()
+		comment_bytes << u8(c)
 	}
+	d.comment = comment_bytes.bytestr()
 
 	// Initialize decoder
 	d.dec = Decoder.new()
