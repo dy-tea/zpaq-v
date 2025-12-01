@@ -4,6 +4,7 @@ module zpaq
 
 // Reader interface for input streams
 pub interface Reader {
+mut:
 	// Read one byte, return -1 on EOF
 	get() int
 	// Read up to buf.len bytes into buf, return bytes read
