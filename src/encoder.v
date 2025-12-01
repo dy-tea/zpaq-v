@@ -4,7 +4,7 @@ module zpaq
 
 // Encoder implements arithmetic encoding with optional prediction
 pub struct Encoder {
-mut:
+pub mut:
 	low    u32 // low end of range
 	high   u32 // high end of range
 	pr     &Predictor = unsafe { nil }
@@ -37,20 +37,21 @@ pub fn (mut e Encoder) set_output(mut output Writer) {
 }
 
 // Encode a bit with given probability
-// p is probability of 1 (0..4095)
+// p is probability of 1 (1..32767)
 pub fn (mut e Encoder) encode(y int, p int) {
-	// Scale probability to range [1, 65534]
+	// Clamp probability to valid range
 	mut pr := p
 	if pr < 1 {
 		pr = 1
 	}
-	if pr > 4094 {
-		pr = 4094
+	if pr > 32766 {
+		pr = 32766
 	}
 
 	// Split range based on probability
+	// mid = low + (high-low) * p / 65536
 	range_ := e.high - e.low
-	mid := e.low + (range_ >> 12) * u32(pr)
+	mid := e.low + u32((u64(range_) * u64(pr)) >> 16)
 
 	if y != 0 {
 		e.low = mid + 1
@@ -77,7 +78,8 @@ pub fn (mut e Encoder) compress(c int) {
 	// Encode each bit MSB first
 	for i := 7; i >= 0; i-- {
 		y := (c >> i) & 1
-		p := e.pr.predict()
+		// Get probability * 2 + 1 for scaling
+		p := e.pr.predict() * 2 + 1
 		e.encode(y, p)
 		e.pr.update(y)
 	}

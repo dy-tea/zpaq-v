@@ -55,47 +55,54 @@ fn test_sha256_abc() {
 fn test_statetable_init() {
 	st := StateTable.new()
 
-	// Initial state 0 should have count (0, 0)
-	assert st.n0(0) == 0
-	assert st.n1(0) == 0
+	// Initial state 0 should have count (0, 0) based on libzpaq state table
+	n0_0 := st.n0(0)
+	n1_0 := st.n1(0)
+	assert n0_0 == 0
+	assert n1_0 == 0
 
-	// State with n0=1, n1=0 is 16
-	assert st.n0(16) == 1
-	assert st.n1(16) == 0
+	// State 1 is the first state after seeing a 0 bit from state 0
+	// Its n0=1, n1=0 based on state_table_data
+	assert st.n0(1) == 1
+	assert st.n1(1) == 0
 
-	// State with n0=0, n1=1 is 1
-	assert st.n0(1) == 0
-	assert st.n1(1) == 1
+	// State 3 is after seeing a 1 bit from state 0
+	// Its n0=0, n1=1
+	assert st.n0(3) == 0
+	assert st.n1(3) == 1
 }
 
 // Test StateTable transitions
 fn test_statetable_transitions() {
 	st := StateTable.new()
 
-	// From state 0, seeing a 0 bit should go to state 16 (n0=1, n1=0)
+	// From state 0, seeing a 0 bit goes to state 1
 	next0 := st.next(0, 0)
-	assert next0 == 16
+	assert next0 == 1
 
-	// From state 0, seeing a 1 bit should go to state 1 (n0=0, n1=1)
+	// From state 0, seeing a 1 bit goes to state 3
 	next1 := st.next(0, 1)
-	assert next1 == 1
+	assert next1 == 3
 }
 
 // Test StateTable cminit probability
 fn test_statetable_cminit() {
 	st := StateTable.new()
 
-	// State 0 (n0=0, n1=0) should have 50% probability
+	// State 0 (n0=0, n1=0) should have ~50% probability
+	// Using (n1+1)/(n0+n1+2) = 1/2 = 16384 out of 32768
 	p0 := st.cminit(0)
-	assert p0 == 2048
+	assert p0 == 16384
 
-	// State 16 (n0=1, n1=0) should have low probability
-	p16 := st.cminit(16)
-	assert p16 == 0
-
-	// State 1 (n0=0, n1=1) should have high probability
+	// State 1 (n0=1, n1=0) should have low probability
+	// (0+1)/(1+0+2) = 1/3 ~= 10923
 	p1 := st.cminit(1)
-	assert p1 == 4096
+	assert p1 >= 10000 && p1 <= 12000, 'cminit(1) = ${p1}'
+
+	// State 3 (n0=0, n1=1) should have high probability
+	// (1+1)/(0+1+2) = 2/3 ~= 21845
+	p3 := st.cminit(3)
+	assert p3 >= 20000 && p3 <= 23000, 'cminit(3) = ${p3}'
 }
 
 // Test FileReader
@@ -272,9 +279,9 @@ fn test_iserr() {
 // Test squash and stretch
 fn test_squash_stretch() {
 	// Squash should map log odds to probabilities
-	// squash(0) should be approximately 2048 (50% probability)
+	// squash(0) should be approximately 16384 (50% probability in 0..32767 range)
 	sq0 := squash(0)
-	assert sq0 >= 1900 && sq0 <= 2200, 'squash(0) = ${sq0}, expected ~2048'
+	assert sq0 >= 15000 && sq0 <= 18000, 'squash(0) = ${sq0}, expected ~16384'
 
 	// Stretch should be inverse of squash
 	p := squash(100)
@@ -287,7 +294,7 @@ fn test_squash_stretch() {
 fn test_predictor_new() {
 	pr := Predictor.new()
 	assert pr.c8 == 1
-	assert pr.hmap4 == 0
+	assert pr.hmap4 == 1 // Now initialized to 1 like libzpaq
 }
 
 // Test Encoder creation
