@@ -333,3 +333,51 @@ fn test_comp_type() {
 	assert get_comp_type(4) == CompType.match_
 	assert get_comp_type(9) == CompType.sse
 }
+
+// Test predictor predict/update cycle
+fn test_predictor_cycle() {
+	mut z := ZPAQL.new()
+	z.header = []u8{}
+
+	mut pr := Predictor.new()
+	pr.init(mut z)
+
+	// Run a few predict/update cycles
+	for _ in 0 .. 8 {
+		p := pr.predict()
+		// Probability should be in valid range
+		assert p >= 1 && p <= 32767, 'Invalid prediction: ${p}'
+		// Update with bit 1
+		pr.update(1)
+	}
+
+	// Run more cycles with 0 bits
+	for _ in 0 .. 8 {
+		p := pr.predict()
+		assert p >= 1 && p <= 32767, 'Invalid prediction: ${p}'
+		pr.update(0)
+	}
+}
+
+// Test basic compression (without ZPAQL)
+fn test_basic_compression() {
+	// Create input data (simple repetitive pattern)
+	input_data := [u8(0x41), 0x41, 0x41, 0x41, 0x42, 0x42, 0x42, 0x42]
+
+	mut input := FileReader.new(input_data)
+	mut output := FileWriter.new()
+
+	mut comp := Compressor.new()
+	comp.set_input(&input)
+	comp.set_output(&output)
+	comp.start_block(1)
+	comp.start_segment('test', '')
+	for comp.compress(8) {
+	}
+	comp.end_segment()
+	comp.end_block()
+
+	compressed := output.bytes()
+	// Should have some output
+	assert compressed.len > 0, 'No compressed output'
+}
