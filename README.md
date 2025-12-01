@@ -137,7 +137,6 @@ buf.reset_read()
 
 ### Types
 
-- `U8`, `U16`, `U32`, `U64` - Type aliases for unsigned integers
 - `CompType` - Enum for component types (none, cons, cm, icm, match_, avg, mix2, mix, isse, sse)
 
 ### Functions

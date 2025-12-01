@@ -2,12 +2,6 @@
 // Ported from libzpaq by Matt Mahoney, public domain
 module zpaq
 
-// Type aliases matching C++ libzpaq
-pub type U8 = u8
-pub type U16 = u16
-pub type U32 = u32
-pub type U64 = u64
-
 // Component types for compression models
 pub enum CompType {
 	none
