@@ -54,7 +54,7 @@ fn main() {
 }
 
 fn parse_args() !Config {
-	// Pre-process args to handle -mN and -sN and -tN style flags
+	// Pre-process args to handle zpaq-style short flags (-mN, -sN, -tN)
 	mut processed_args := preprocess_args(os.args)
 
 	mut fp := flag.new_flag_parser(processed_args)
@@ -250,7 +250,10 @@ fn run_add(cfg Config) ! {
 	mut output_data := []u8{}
 	if os.exists(archive) && !cfg.force {
 		// Read existing archive (for appending)
-		output_data = os.read_bytes(archive) or { []u8{} }
+		output_data = os.read_bytes(archive) or {
+			eprintln("Warning: Could not read existing archive '${archive}': ${err}, creating new archive")
+			[]u8{}
+		}
 	}
 
 	mut output := zpaq.FileWriter.new()
@@ -267,7 +270,7 @@ fn run_add(cfg Config) ! {
 	// Add each file
 	for file in files_to_add {
 		data := os.read_bytes(file) or {
-			eprintln("Warning: Could not read '${file}', skipping")
+			eprintln("Warning: Could not read '${file}': ${err}, skipping")
 			continue
 		}
 
@@ -329,8 +332,10 @@ fn run_extract(cfg Config) ! {
 			}
 
 			// Apply -to rename if specified
+			// If to_files is provided, use first element as output directory prefix
 			mut output_name := filename
 			if cfg.to_files.len > 0 {
+				// Use first -to argument as output directory
 				output_name = cfg.to_files[0] + '/' + filename
 			}
 
