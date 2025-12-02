@@ -1,3 +1,5 @@
+<mark> NOTE: You probably shouldn't use this - it's fully written by copilot done as a test, don't expect anything to work. </mark>
+
 # ZPAQ Compression Library for V
 
 A V programming language port of the ZPAQ compression library, originally written by Matt Mahoney (public domain).
@@ -13,22 +15,6 @@ ZPAQ is a journaling archiver optimized for incremental backups with strong comp
 - **High-level compressor and decompressor** APIs
 - **Dynamic arrays** with modulo addressing
 - **State tables** for bit history tracking
-
-## Installation
-
-Add `zpaq` to your V project:
-
-```bash
-v install dy-tea.zpaq
-```
-
-Or clone directly:
-
-```bash
-git clone https://github.com/dy-tea/zpaq-v.git
-cd zpaq-v
-v test src/
-```
 
 ## Usage
 
@@ -178,22 +164,6 @@ buf.reset_read()
 - `Decoder` - Arithmetic decoder
 - `Compressor` - High-level compression
 - `Decompresser` - High-level decompression
-
-## Building
-
-```bash
-# Run tests
-v test src/
-
-# Build shared library
-v -shared src/
-
-# Format code
-v fmt -w src/
-
-# Lint code
-v vet src/
-```
 
 ## References
 
