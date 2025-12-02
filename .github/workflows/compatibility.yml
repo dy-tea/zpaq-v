@@ -31,7 +31,7 @@ jobs:
       - name: Install build dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y g++ make
+          sudo apt-get install -y g++ make bc
 
       - name: Download and build original zpaq
         id: build_original
@@ -282,10 +282,8 @@ jobs:
               # Compare archive sizes
               if [ "$original_archive_size" != "0" ] && [ "$v_archive_size" != "0" ]; then
                   size_diff=$((v_archive_size - original_archive_size))
-                  if [ "$original_archive_size" -gt 0 ]; then
-                      percent_diff=$(echo "scale=2; ($size_diff * 100) / $original_archive_size" | bc 2>/dev/null || echo "N/A")
-                      echo "  Size difference: $size_diff bytes ($percent_diff%)"
-                  fi
+                  percent_diff=$(echo "scale=2; ($size_diff * 100) / $original_archive_size" | bc 2>/dev/null || echo "N/A")
+                  echo "  Size difference: $size_diff bytes ($percent_diff%)"
                   
                   # Compare compression ratios
                   if [ "$original_size" -gt 0 ]; then
