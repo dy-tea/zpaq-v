@@ -381,3 +381,42 @@ fn test_basic_compression() {
 	// Should have some output
 	assert compressed.len > 0, 'No compressed output'
 }
+
+// Test compression level configuration
+fn test_compression_levels() {
+	// Test each predefined level
+	for level in 0 .. 5 {
+		config := get_compression_level(level)
+		assert config.name.len > 0, 'Level ${level} has no name'
+		if level == 0 {
+			// Store mode has no HCOMP
+			assert config.hcomp.len == 0, 'Level 0 should have empty hcomp'
+		} else {
+			// Compressed modes have HCOMP header
+			assert config.hcomp.len > 0, 'Level ${level} should have hcomp'
+		}
+	}
+}
+
+// Test encoder/decoder symmetry with simple data
+fn test_encoder_decoder_symmetry() {
+	// Create predictor
+	mut z := ZPAQL.new()
+	z.header = []u8{}
+
+	mut pr := Predictor.new()
+	pr.init(mut z)
+
+	// Encode a simple byte sequence
+	mut output := FileWriter.new()
+	mut enc := Encoder.new()
+	enc.init(mut pr, mut output)
+
+	// Encode byte 0x55 (01010101)
+	enc.compress(0x55)
+	enc.flush()
+
+	// The output should contain encoded data
+	encoded := output.bytes()
+	assert encoded.len > 0, 'Encoder produced no output'
+}

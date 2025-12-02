@@ -36,20 +36,22 @@ pub fn (mut e Encoder) set_output(mut output Writer) {
 	}
 }
 
-// Encode a bit with given probability
-// p is probability of 1 (1..32767)
+// Encode a bit with given probability (libzpaq compatible)
+// p is probability of 1 in range (1..65535)
+// Uses 32-bit arithmetic with proper range scaling
 pub fn (mut e Encoder) encode(y int, p int) {
-	// Clamp probability to valid range
+	// Clamp probability to valid range (1..65534)
 	mut pr := p
 	if pr < 1 {
 		pr = 1
 	}
-	if pr > 32766 {
-		pr = 32766
+	if pr > 65534 {
+		pr = 65534
 	}
 
 	// Split range based on probability
-	// mid = low + (high-low) * p / 65536
+	// mid = low + (range * p) / 65536
+	// This matches libzpaq's exact calculation
 	range_ := e.high - e.low
 	mid := e.low + u32((u64(range_) * u64(pr)) >> 16)
 
@@ -60,6 +62,7 @@ pub fn (mut e Encoder) encode(y int, p int) {
 	}
 
 	// Output bytes when range is small enough
+	// When top 8 bits match, output them
 	for (e.high ^ e.low) < 0x1000000 {
 		if e.output != unsafe { nil } {
 			e.output.put(int(e.high >> 24))
@@ -69,7 +72,7 @@ pub fn (mut e Encoder) encode(y int, p int) {
 	}
 }
 
-// Compress one byte using predictor
+// Compress one byte using predictor (libzpaq compatible)
 pub fn (mut e Encoder) compress(c int) {
 	if e.pr == unsafe { nil } {
 		return
@@ -78,9 +81,11 @@ pub fn (mut e Encoder) compress(c int) {
 	// Encode each bit MSB first
 	for i := 7; i >= 0; i-- {
 		y := (c >> i) & 1
-		// Get probability * 2 + 1 for scaling
-		p := e.pr.predict() * 2 + 1
-		e.encode(y, p)
+		// Get probability - predictor returns 1..32767, scale to 1..65535
+		p := e.pr.predict()
+		// Scale: p * 65536 / 32768 = p * 2
+		scaled_p := p * 2
+		e.encode(y, scaled_p)
 		e.pr.update(y)
 	}
 }
@@ -92,16 +97,16 @@ pub fn (mut e Encoder) compress_bytes(data []u8) {
 	}
 }
 
-// Flush remaining bits
+// Flush remaining bits (libzpaq compatible)
 pub fn (mut e Encoder) flush() {
 	if e.output == unsafe { nil } {
 		return
 	}
-	// Output remaining bytes
+	// Output remaining 4 bytes from high register
 	e.output.put(int(e.high >> 24))
-	e.output.put(int(e.high >> 16))
-	e.output.put(int(e.high >> 8))
-	e.output.put(int(e.high))
+	e.output.put(int((e.high >> 16) & 0xFF))
+	e.output.put(int((e.high >> 8) & 0xFF))
+	e.output.put(int(e.high & 0xFF))
 }
 
 // Get current low value

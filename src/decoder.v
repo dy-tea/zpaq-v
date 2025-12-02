@@ -34,10 +34,15 @@ pub fn (mut d Decoder) init(mut pr Predictor, mut input Reader) {
 	d.low = 1
 	d.high = 0xFFFFFFFF
 
-	// Read initial code bytes
+	// Read initial 4 code bytes
 	d.code = 0
 	for _ in 0 .. 4 {
-		d.code = (d.code << 8) | u32(d.get())
+		c := d.get()
+		if c < 0 {
+			d.code = (d.code << 8)
+		} else {
+			d.code = (d.code << 8) | u32(c)
+		}
 	}
 }
 
@@ -61,21 +66,21 @@ pub fn (d &Decoder) buffered() bool {
 	return d.buf.len > d.pos
 }
 
-// Decode a bit given probability
-// p is probability of 1 (0..4095)
+// Decode a bit given probability (libzpaq compatible)
+// p is probability of 1 in range (1..65535)
 pub fn (mut d Decoder) decode(p int) int {
-	// Scale probability
+	// Clamp probability
 	mut pr := p
 	if pr < 1 {
 		pr = 1
 	}
-	if pr > 4094 {
-		pr = 4094
+	if pr > 65534 {
+		pr = 65534
 	}
 
 	// Split range based on probability
 	range_ := d.high - d.low
-	mid := d.low + (range_ >> 12) * u32(pr)
+	mid := d.low + u32((u64(range_) * u64(pr)) >> 16)
 
 	// Determine bit based on code position
 	mut y := 0
@@ -90,13 +95,18 @@ pub fn (mut d Decoder) decode(p int) int {
 	for (d.high ^ d.low) < 0x1000000 {
 		d.low <<= 8
 		d.high = (d.high << 8) | 0xFF
-		d.code = (d.code << 8) | u32(d.get())
+		c := d.get()
+		if c < 0 {
+			d.code = (d.code << 8)
+		} else {
+			d.code = (d.code << 8) | u32(c)
+		}
 	}
 
 	return y
 }
 
-// Decompress one byte using predictor
+// Decompress one byte using predictor (libzpaq compatible)
 // Returns -1 on EOF
 pub fn (mut d Decoder) decompress() int {
 	if d.pr == unsafe { nil } {
@@ -107,7 +117,9 @@ pub fn (mut d Decoder) decompress() int {
 	mut c := 1
 	for c < 256 {
 		p := d.pr.predict()
-		y := d.decode(p)
+		// Scale: p * 65536 / 32768 = p * 2
+		scaled_p := p * 2
+		y := d.decode(scaled_p)
 		d.pr.update(y)
 		c = (c << 1) | y
 	}
