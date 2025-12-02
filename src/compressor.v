@@ -7,8 +7,8 @@ const comp_state_block = 0 // in block
 const comp_state_segment = 1 // in segment
 const comp_state_start = 2 // at start
 
-// ZPAQ block locator tag (magic bytes to find blocks)
-const zpaq_block_tag = [u8(0x7A), 0x50, 0x51] // 'zPQ'
+// ZPAQ block locator tag (magic bytes 'zPQ')
+const zpaq_block_tag = [u8(0x7A), 0x50, 0x51]
 
 // ZPAQ segment locator tag
 const zpaq_segment_tag = [u8(0x01)]
@@ -23,7 +23,7 @@ mut:
 	pr     Predictor // prediction model
 	input  &Reader = unsafe { nil }
 	output &Writer = unsafe { nil }
-	sha1   SHA1 // hash of uncompressed data
+	sha1   SHA1 // SHA1 hash of original uncompressed data for integrity verification
 	level  int  // compression level (0-5)
 }
 

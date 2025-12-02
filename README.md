@@ -124,14 +124,25 @@ buf.reset_read()
 - `src/io.v` - I/O interfaces (Reader, Writer, FileReader, FileWriter, StringBuffer)
 - `src/sha1.v` - SHA1 and SHA256 hash implementations
 - `src/array.v` - Generic dynamic array with modulo addressing
-- `src/statetable.v` - State table for bit history
+- `src/statetable.v` - State table for bit history (libzpaq data)
 - `src/zpaql.v` - ZPAQL Virtual Machine
-- `src/predictor.v` - Context mixing predictor
-- `src/encoder.v` - Arithmetic encoder
-- `src/decoder.v` - Arithmetic decoder
+- `src/predictor.v` - Context mixing predictor (all 9 component types)
+- `src/encoder.v` - Arithmetic encoder (libzpaq compatible)
+- `src/decoder.v` - Arithmetic decoder (libzpaq compatible)
 - `src/compressor.v` - High-level compression API
 - `src/decompressor.v` - High-level decompression API
+- `src/levels.v` - Predefined compression levels (0-5)
 - `src/zpaq_test.v` - Unit tests
+
+## Compression Levels
+
+| Level | Name   | Description |
+|-------|--------|-------------|
+| 0     | Store  | No compression, just store |
+| 1     | Fast   | Order-1 context model, fastest |
+| 2     | Normal | ICM + ISSE chain |
+| 3     | High   | More components, larger tables |
+| 4-5   | Max    | Full model with all component types |
 
 ## API Reference
 

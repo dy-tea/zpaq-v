@@ -384,8 +384,8 @@ fn test_basic_compression() {
 
 // Test compression level configuration
 fn test_compression_levels() {
-	// Test each predefined level
-	for level in 0 .. 5 {
+	// Test each predefined level (0-5)
+	for level in 0 .. 6 {
 		config := get_compression_level(level)
 		assert config.name.len > 0, 'Level ${level} has no name'
 		if level == 0 {

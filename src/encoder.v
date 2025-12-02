@@ -104,9 +104,9 @@ pub fn (mut e Encoder) flush() {
 	}
 	// Output remaining 4 bytes from high register
 	e.output.put(int(e.high >> 24))
-	e.output.put(int((e.high >> 16) & 0xFF))
-	e.output.put(int((e.high >> 8) & 0xFF))
-	e.output.put(int(e.high & 0xFF))
+	e.output.put(int(e.high >> 16))
+	e.output.put(int(e.high >> 8))
+	e.output.put(int(e.high))
 }
 
 // Get current low value

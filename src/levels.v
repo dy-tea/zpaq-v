@@ -30,7 +30,7 @@ pub fn get_compression_level(level int) CompressionLevel {
 		2 { level_2_normal() }
 		3 { level_3_high() }
 		4 { level_4_max() }
-		5 { level_4_max() } // Same as 4
+		5 { level_5_max() }
 		else { level_1_fast() }
 	}
 }
@@ -189,6 +189,57 @@ fn level_4_max() CompressionLevel {
 		]
 		hh: 8
 		hm: 8
+	}
+}
+
+// Level 5: Ultra compression
+// Larger tables and more contexts for best compression
+fn level_5_max() CompressionLevel {
+	return CompressionLevel{
+		name: 'ultra'
+		hcomp: [
+			u8(10), // hm = 1024 bytes
+			10, // hh = 1024 words
+			0, // ph = 0
+			0, // pm = 0
+			9, // n = 9 components
+			// Component 0: ICM
+			3, // type = ICM
+			22, // size bits
+			// Component 1: ISSE
+			8, // type = ISSE
+			22, // size bits
+			// Component 2: ISSE
+			8, // type = ISSE
+			22, // size bits
+			// Component 3: ISSE
+			8, // type = ISSE
+			22, // size bits
+			// Component 4: ISSE
+			8, // type = ISSE
+			22, // size bits
+			// Component 5: ISSE
+			8, // type = ISSE
+			22, // size bits
+			// Component 6: MATCH
+			4, // type = MATCH
+			24, // index bits
+			24, // buffer bits
+			// Component 7: MIX2
+			6, // type = MIX2
+			20, // size bits
+			16, // rate
+			// Component 8: SSE
+			9, // type = SSE
+			18, // size bits
+			32, // start
+			4, // limit
+			// End
+			0,
+			0,
+		]
+		hh: 10
+		hm: 10
 	}
 }
 
