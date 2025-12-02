@@ -113,12 +113,19 @@ pub fn (mut d Decoder) decompress() int {
 		return -1
 	}
 
-	// Decode each bit MSB first
+	// First, decode EOF bit with probability 0
+	// If y=1, this is EOF marker
+	eof_bit := d.decode(0)
+	if eof_bit != 0 {
+		return -1 // EOF
+	}
+
+	// Decode 8 bits using predictor
 	mut c := 1
 	for c < 256 {
 		p := d.pr.predict()
 		// Scale: p * 65536 / 32768 = p * 2
-		scaled_p := p * 2
+		scaled_p := p * 2 + 1 // +1 to match libzpaq's p*2+1
 		y := d.decode(scaled_p)
 		d.pr.update(y)
 		c = (c << 1) | y

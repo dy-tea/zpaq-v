@@ -1,0 +1,130 @@
+name: Compression/Decompression Test
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+    branches: [main, master]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  compress-decompress:
+    name: Test Compression Level ${{ matrix.level }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        level: [0, 1, 2, 3, 4, 5]
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup V
+        uses: prantlf/setup-v-action@v2
+        with:
+          version: master
+          install-dependencies: true
+
+      - name: Print V version
+        run: v -V
+
+      - name: Build CLI tool
+        run: v cmd/main.v -o zpaq-cli
+
+      - name: Create test directory with files
+        run: |
+          mkdir -p testdir
+          
+          # Create a simple text file
+          echo "Hello, ZPAQ World! This is a test file for compression." > testdir/simple.txt
+          
+          # Create a repetitive file (compresses well)
+          for i in {1..100}; do
+            echo "Line $i with repetitive content for compression testing" >> testdir/repetitive.txt
+          done
+          
+          # Create a binary-like file
+          dd if=/dev/urandom bs=1024 count=5 of=testdir/random.bin 2>/dev/null
+          
+          # Create an empty file
+          touch testdir/empty.txt
+          
+          # Create a nested directory structure
+          mkdir -p testdir/subdir
+          echo "File in subdirectory" > testdir/subdir/nested.txt
+          
+          echo "Test directory created:"
+          find testdir -type f -exec ls -la {} \;
+          echo ""
+          echo "File checksums:"
+          find testdir -type f -exec sha256sum {} \;
+
+      - name: Compress directory (level ${{ matrix.level }})
+        timeout-minutes: 2
+        run: |
+          echo "Compressing with level ${{ matrix.level }}..."
+          ./zpaq-cli add test_archive.zpaq testdir/ -m${{ matrix.level }} -s1
+          ls -la test_archive.zpaq
+          echo "Archive size: $(wc -c < test_archive.zpaq) bytes"
+
+      - name: List archive contents
+        timeout-minutes: 1
+        run: |
+          echo "Listing archive contents..."
+          ./zpaq-cli list test_archive.zpaq
+
+      - name: Extract archive
+        timeout-minutes: 2
+        run: |
+          echo "Extracting archive..."
+          mkdir -p extracted
+          ./zpaq-cli extract test_archive.zpaq -to extracted -s1
+          
+          echo ""
+          echo "Extracted files:"
+          find extracted -type f -exec ls -la {} \;
+
+      - name: Verify extracted files
+        run: |
+          echo "Verifying extracted files..."
+          
+          # Compare file contents
+          echo "Comparing simple.txt..."
+          diff testdir/simple.txt extracted/simple.txt
+          
+          echo "Comparing repetitive.txt..."
+          diff testdir/repetitive.txt extracted/repetitive.txt
+          
+          echo "Comparing random.bin..."
+          diff testdir/random.bin extracted/random.bin
+          
+          echo "Comparing empty.txt..."
+          diff testdir/empty.txt extracted/empty.txt
+          
+          echo "Comparing subdir/nested.txt..."
+          diff testdir/subdir/nested.txt extracted/nested.txt
+          
+          echo ""
+          echo "All files verified successfully!"
+
+      - name: Test mode verification
+        timeout-minutes: 1
+        run: |
+          echo "Testing -test mode (verify without extracting)..."
+          ./zpaq-cli extract test_archive.zpaq -test
+
+      - name: Summary
+        run: |
+          echo "========================================"
+          echo "Compression Level ${{ matrix.level }} Test Complete"
+          echo "========================================"
+          echo "Original directory size: $(du -sh testdir | cut -f1)"
+          echo "Archive size: $(du -sh test_archive.zpaq | cut -f1)"
+          echo "All tests passed!"

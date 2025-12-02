@@ -61,6 +61,11 @@ pub fn (mut f FileReader) get() int {
 	return int(c)
 }
 
+// Get current position
+pub fn (f &FileReader) position() int {
+	return f.pos
+}
+
 // Read bytes into buffer, return count
 pub fn (mut f FileReader) read(mut buf []u8) int {
 	mut n := 0

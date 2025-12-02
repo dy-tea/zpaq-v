@@ -16,27 +16,31 @@ const zpaq_segment_tag = [u8(0x01)]
 // Compressor provides high-level ZPAQ compression
 pub struct Compressor {
 mut:
-	state  int       // current state
-	z      ZPAQL     // ZPAQL VM for HCOMP
-	pz     ZPAQL     // ZPAQL VM for PCOMP
-	enc    Encoder   // arithmetic encoder
-	pr     Predictor // prediction model
-	input  &Reader = unsafe { nil }
-	output &Writer = unsafe { nil }
-	sha1   SHA1 // SHA1 hash of original uncompressed data for integrity verification
-	level  int  // compression level (0-5)
+	state      int       // current state
+	z          ZPAQL     // ZPAQL VM for HCOMP
+	pz         ZPAQL     // ZPAQL VM for PCOMP
+	enc        Encoder   // arithmetic encoder
+	pr         Predictor // prediction model
+	input      &Reader = unsafe { nil }
+	output     &Writer = unsafe { nil }
+	sha1       SHA1   // SHA1 hash of original uncompressed data for integrity verification
+	level      int    // compression level (0-5)
+	store_buf  []u8   // buffer for store mode
+	store_size u32    // bytes in store buffer
 }
 
 // Create a new compressor
 pub fn Compressor.new() Compressor {
 	return Compressor{
-		state: comp_state_start
-		z:     ZPAQL.new()
-		pz:    ZPAQL.new()
-		enc:   Encoder.new()
-		pr:    Predictor.new()
-		sha1:  SHA1.new()
-		level: 1
+		state:      comp_state_start
+		z:          ZPAQL.new()
+		pz:         ZPAQL.new()
+		enc:        Encoder.new()
+		pr:         Predictor.new()
+		sha1:       SHA1.new()
+		level:      1
+		store_buf:  []u8{cap: 65536}
+		store_size: 0
 	}
 }
 
@@ -158,7 +162,7 @@ pub fn (mut c Compressor) start_segment(filename string, comment string) {
 		}
 		c.output.put(0)
 
-		// Write segment flags (0 = no SHA1 stored at end)
+		// Write segment flags (0 = reserved byte, required by libzpaq)
 		c.output.put(0)
 	}
 
@@ -171,6 +175,10 @@ pub fn (mut c Compressor) start_segment(filename string, comment string) {
 
 	// Reset predictor state for new segment
 	c.pr.reset()
+
+	// Reset store buffer for store mode
+	c.store_buf.clear()
+	c.store_size = 0
 
 	c.state = comp_state_segment
 }
@@ -206,7 +214,8 @@ pub fn (mut c Compressor) compress(n int) bool {
 	return true
 }
 
-// Store mode compression (level 0) - no compression, just store
+// Store mode compression (level 0) - no compression, just store with length prefix
+// libzpaq format: 4-byte big-endian length + raw data, repeated. Length 0 = end.
 fn (mut c Compressor) compress_store(n int) bool {
 	if c.input == unsafe { nil } || c.output == unsafe { nil } {
 		return false
@@ -222,13 +231,41 @@ fn (mut c Compressor) compress_store(n int) bool {
 		// Update hash
 		c.sha1.put(ch)
 
-		// Write byte directly (no encoding)
-		c.output.put(ch)
+		// Add to buffer
+		c.store_buf << u8(ch)
+		c.store_size++
+
+		// Flush buffer when full (64KB chunks)
+		if c.store_size >= 65536 {
+			c.flush_store_buffer()
+		}
 
 		count++
 	}
 
 	return true
+}
+
+// Flush the store buffer to output with length prefix
+fn (mut c Compressor) flush_store_buffer() {
+	if c.output == unsafe { nil } || c.store_size == 0 {
+		return
+	}
+
+	// Write 4-byte big-endian length
+	c.output.put(int((c.store_size >> 24) & 0xFF))
+	c.output.put(int((c.store_size >> 16) & 0xFF))
+	c.output.put(int((c.store_size >> 8) & 0xFF))
+	c.output.put(int(c.store_size & 0xFF))
+
+	// Write raw data
+	for b in c.store_buf {
+		c.output.put(int(b))
+	}
+
+	// Clear buffer
+	c.store_buf.clear()
+	c.store_size = 0
 }
 
 // End the current segment
@@ -237,35 +274,36 @@ pub fn (mut c Compressor) end_segment() {
 		return
 	}
 
-	// Level 0 is store mode - no encoding needed
-	if c.level > 0 {
-		// Encode end-of-data marker (256 = segment end)
-		// First encode 1 bit (value = 1) to indicate special byte
-		p := c.pr.predict()
-		c.enc.encode(1, p)
-		c.pr.update(1)
+	if c.output != unsafe { nil } {
+		// Level 0 is store mode - flush remaining buffer and write terminator
+		if c.level == 0 || !c.pr.is_modeled() {
+			// Flush any remaining buffered data
+			c.flush_store_buffer()
 
-		// Then encode 0x00 byte to indicate end
-		for i := 7; i >= 0; i-- {
-			p2 := c.pr.predict()
-			c.enc.encode(0, p2)
-			c.pr.update(0)
+			// Write 4 zero bytes (length = 0 means end of data)
+			c.output.put(0)
+			c.output.put(0)
+			c.output.put(0)
+			c.output.put(0)
+		} else {
+			// Compressed mode: encode EOF marker using compress(-1)
+			c.enc.compress(-1)
+
+			// Flush encoder (writes remaining state)
+			c.enc.flush()
+
+			// Write 4 zero bytes as end marker
+			c.output.put(0)
+			c.output.put(0)
+			c.output.put(0)
+			c.output.put(0)
 		}
 
-		// Flush encoder
-		c.enc.flush()
-	}
+		// Compute SHA1 hash
+		hash := c.sha1.result()
 
-	// Write segment end marker (0xFF = end of segment data)
-	if c.output != unsafe { nil } {
-		c.output.put(0xFF)
-	}
-
-	// Compute SHA1 hash
-	hash := c.sha1.result()
-
-	// Write SHA1 hash (20 bytes)
-	if c.output != unsafe { nil } {
+		// Write segment end marker with SHA1 (253) followed by 20-byte hash
+		c.output.put(253)
 		for b in hash {
 			c.output.put(int(b))
 		}

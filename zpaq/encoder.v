@@ -73,18 +73,30 @@ pub fn (mut e Encoder) encode(y int, p int) {
 }
 
 // Compress one byte using predictor (libzpaq compatible)
+// Pass c=-1 to encode EOF marker
 pub fn (mut e Encoder) compress(c int) {
 	if e.pr == unsafe { nil } {
 		return
 	}
+
+	// First encode EOF/data bit with probability 0
+	// y=1 means EOF, y=0 means data follows
+	if c == -1 {
+		// EOF marker
+		e.encode(1, 0)
+		return
+	}
+
+	// Data byte follows
+	e.encode(0, 0)
 
 	// Encode each bit MSB first
 	for i := 7; i >= 0; i-- {
 		y := (c >> i) & 1
 		// Get probability - predictor returns 1..32767, scale to 1..65535
 		p := e.pr.predict()
-		// Scale: p * 65536 / 32768 = p * 2
-		scaled_p := p * 2
+		// Scale: p * 65536 / 32768 = p * 2 + 1 to match libzpaq
+		scaled_p := p * 2 + 1
 		e.encode(y, scaled_p)
 		e.pr.update(y)
 	}

@@ -234,8 +234,10 @@ pub fn (mut pred Predictor) init(mut z ZPAQL) {
 
 	// Parse header for components
 	if z.header.len < 7 {
-		// No components defined, use default simple model
-		pred.init_default()
+		// No components defined - this is store mode, don't create any components
+		pred.comp = []Component{}
+		pred.p = []int{}
+		pred.h = []u32{}
 		return
 	}
 
@@ -248,7 +250,10 @@ pub fn (mut pred Predictor) init(mut z ZPAQL) {
 
 	n := int(z.header[6])
 	if n == 0 {
-		pred.init_default()
+		// Zero components - store mode
+		pred.comp = []Component{}
+		pred.p = []int{}
+		pred.h = []u32{}
 		return
 	}
 
