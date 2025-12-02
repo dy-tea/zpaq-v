@@ -11,6 +11,9 @@
 # Test artifacts
 *.test
 
+# Built binaries
+zpaq-cli
+
 # IDE files
 .idea/
 .vscode/
