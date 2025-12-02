@@ -208,9 +208,9 @@ jobs:
           }
           VEOF
 
-          # Install the module locally
-          mkdir -p ~/.vmodules
-          ln -sf $PWD ~/.vmodules/zpaq
+          # Install the module locally - copy files to avoid symlink issues
+          mkdir -p ~/.vmodules/zpaq
+          cp zpaq/*.v ~/.vmodules/zpaq/
 
           # Build the tool
           v -o /tmp/zpaq_compat_test /tmp/compat_main.v
