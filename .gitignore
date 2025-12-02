@@ -1,0 +1,23 @@
+# Compiled V files
+*.so
+*.o
+*.a
+*.dll
+*.exe
+
+# V cache
+.v/
+
+# Test artifacts
+*.test
+
+# IDE files
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# OS files
+.DS_Store
+Thumbs.db

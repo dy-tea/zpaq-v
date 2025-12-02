@@ -1,0 +1,73 @@
+name: Test ZPAQ V Implementation
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+    branches: [main, master]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: Test on ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+        v-version: [master]
+        include:
+          - os: ubuntu-latest
+            v-version: weekly
+          - os: ubuntu-latest
+            v-version: latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup V (latest commit)
+        uses: prantlf/setup-v-action@v2
+        with:
+          version: ${{ matrix.v-version }}
+          install-dependencies: true
+
+      - name: Print V version
+        run: v -V
+
+      - name: Check V formatting
+        run: v fmt -c src/
+        continue-on-error: true
+
+      - name: Run V tests
+        run: v test src/
+
+      - name: Build ZPAQ module
+        run: v -shared src/
+
+  lint:
+    name: Lint
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup V (master)
+        uses: prantlf/setup-v-action@v2
+        with:
+          version: master
+
+      - name: Run V vet
+        run: v vet src/
+        continue-on-error: true
+
+      - name: Check formatting
+        run: v fmt -c src/
+        continue-on-error: true
