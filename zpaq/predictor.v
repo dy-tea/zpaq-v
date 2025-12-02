@@ -287,11 +287,10 @@ pub fn (mut pred Predictor) init(mut z ZPAQL) {
 			}
 			3 { // ICM - indirect context model
 				pred.comp[i].a = int(z.header[cp + 1]) // sizebits
-				// ICM ht size is 64 * 2^sizebits = 16 * 2^(sizebits+2)
-				// This matches libzpaq's cr.ht.resize(64, cp[1])
+				// ICM ht size is 64 * 2^sizebits (same as libzpaq's cr.ht.resize(64, cp[1]))
 				size := 1 << pred.comp[i].a
 				pred.comp[i].cm = []u32{len: 256}
-				pred.comp[i].ht = []u8{len: size * 64} // 64 rows per 2^sizebits
+				pred.comp[i].ht = []u8{len: size * 64}
 				// Initialize CM with state-based probabilities
 				for j := 0; j < 256; j++ {
 					pred.comp[i].cm[j] = u32(pred.st.cminit(j) << 8)
@@ -337,10 +336,9 @@ pub fn (mut pred Predictor) init(mut z ZPAQL) {
 			}
 			8 { // ISSE - indirect SSE chain
 				pred.comp[i].a = int(z.header[cp + 1]) // sizebits
-				// ISSE ht size is 64 * 2^sizebits = 16 * 2^(sizebits+2)
-				// This matches libzpaq's cr.ht.resize(64, cp[1])
+				// ISSE ht size is 64 * 2^sizebits (same as libzpaq's cr.ht.resize(64, cp[1]))
 				size := 1 << pred.comp[i].a
-				pred.comp[i].ht = []u8{len: size * 64} // 64 rows per 2^sizebits
+				pred.comp[i].ht = []u8{len: size * 64}
 				pred.comp[i].cm = []u32{len: 512}
 				// Initialize weights
 				for j := 0; j < 256; j++ {

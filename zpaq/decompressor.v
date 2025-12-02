@@ -219,11 +219,8 @@ pub fn (mut d Decompresser) find_filename() bool {
 		d.state = decomp_state_start
 		return false
 	}
-	if marker != 1 {
-		// Unexpected byte - this might be the first character of filename
-		// in a non-standard format, but for now we'll treat non-1 as error
-		// Actually, let's try to handle it gracefully
-	}
+	// marker should be 1 for a valid segment; other values indicate format error
+	// but we continue anyway for robustness
 
 	// Read filename (null-terminated)
 	mut filename_bytes := []u8{}
@@ -267,6 +264,7 @@ pub fn (mut d Decompresser) find_filename() bool {
 
 	// Only initialize decoder for compressed mode (not store mode)
 	// For store mode, we read raw bytes without arithmetic decoding
+	// A new decoder is created for each segment to ensure clean state
 	if d.pr.is_modeled() {
 		d.dec = Decoder.new()
 		d.dec.init(mut d.pr, mut d.input)

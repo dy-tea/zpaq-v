@@ -29,7 +29,7 @@ jobs:
       - name: Setup V
         uses: prantlf/setup-v-action@v2
         with:
-          version: master
+          version: latest
           install-dependencies: true
 
       - name: Print V version
