@@ -287,9 +287,11 @@ pub fn (mut pred Predictor) init(mut z ZPAQL) {
 			}
 			3 { // ICM - indirect context model
 				pred.comp[i].a = int(z.header[cp + 1]) // sizebits
+				// ICM ht size is 64 * 2^sizebits = 16 * 2^(sizebits+2)
+				// This matches libzpaq's cr.ht.resize(64, cp[1])
 				size := 1 << pred.comp[i].a
 				pred.comp[i].cm = []u32{len: 256}
-				pred.comp[i].ht = []u8{len: size * 16}
+				pred.comp[i].ht = []u8{len: size * 64} // 64 rows per 2^sizebits
 				// Initialize CM with state-based probabilities
 				for j := 0; j < 256; j++ {
 					pred.comp[i].cm[j] = u32(pred.st.cminit(j) << 8)
@@ -335,8 +337,10 @@ pub fn (mut pred Predictor) init(mut z ZPAQL) {
 			}
 			8 { // ISSE - indirect SSE chain
 				pred.comp[i].a = int(z.header[cp + 1]) // sizebits
+				// ISSE ht size is 64 * 2^sizebits = 16 * 2^(sizebits+2)
+				// This matches libzpaq's cr.ht.resize(64, cp[1])
 				size := 1 << pred.comp[i].a
-				pred.comp[i].ht = []u8{len: size * 16}
+				pred.comp[i].ht = []u8{len: size * 64} // 64 rows per 2^sizebits
 				pred.comp[i].cm = []u32{len: 512}
 				// Initialize weights
 				for j := 0; j < 256; j++ {
@@ -632,11 +636,14 @@ pub fn (mut pred Predictor) update(y int) {
 			}
 			8 { // ISSE
 				err := y * 32767 - squash(pred.p[i])
-				wt0 := clamp512k(int(cr.cm[int(cr.cxt) * 2]) + ((err * pred.p[i - 1] +
-					(1 << 12)) >> 13))
-				wt1 := clamp512k(int(cr.cm[int(cr.cxt) * 2 + 1]) + ((err + 16) >> 5))
-				cr.cm[int(cr.cxt) * 2] = u32(wt0)
-				cr.cm[int(cr.cxt) * 2 + 1] = u32(wt1)
+				// Bounds check: ISSE at index 0 has no previous component
+				if i > 0 {
+					wt0 := clamp512k(int(cr.cm[int(cr.cxt) * 2]) + ((err * pred.p[i - 1] +
+						(1 << 12)) >> 13))
+					wt1 := clamp512k(int(cr.cm[int(cr.cxt) * 2 + 1]) + ((err + 16) >> 5))
+					cr.cm[int(cr.cxt) * 2] = u32(wt0)
+					cr.cm[int(cr.cxt) * 2 + 1] = u32(wt1)
+				}
 				cr.ht[cr.c + int(pred.hmap4 & 15)] = u8(pred.st.next(int(cr.cxt), y))
 			}
 			9 { // SSE
