@@ -85,7 +85,7 @@ jobs:
         run: |
           echo "Extracting archive..."
           mkdir -p extracted
-          ./zpaq-cli extract test_archive.zpaq -to extracted -s1
+          ./zpaq-cli extract test_archive.zpaq --to extracted -s1
           
           echo ""
           echo "Extracted files:"
