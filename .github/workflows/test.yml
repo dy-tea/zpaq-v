@@ -41,14 +41,20 @@ jobs:
         run: v -V
 
       - name: Check V formatting
-        run: v fmt -c src/
+        run: v fmt -c zpaq/
         continue-on-error: true
 
-      - name: Run V tests
-        run: v test src/
+      - name: Run V tests (library)
+        run: v test zpaq/
+
+      - name: Run V tests (CLI)
+        run: v test cmd/
 
       - name: Build ZPAQ module
-        run: v -shared src/
+        run: v -shared zpaq/
+
+      - name: Build CLI tool
+        run: v cmd/main.v -o zpaq-cli
 
   lint:
     name: Lint
@@ -64,10 +70,18 @@ jobs:
         with:
           version: master
 
-      - name: Run V vet
-        run: v vet src/
+      - name: Run V vet (library)
+        run: v vet zpaq/
         continue-on-error: true
 
-      - name: Check formatting
-        run: v fmt -c src/
+      - name: Run V vet (CLI)
+        run: v vet cmd/
+        continue-on-error: true
+
+      - name: Check formatting (library)
+        run: v fmt -c zpaq/
+        continue-on-error: true
+
+      - name: Check formatting (CLI)
+        run: v fmt -c cmd/
         continue-on-error: true
