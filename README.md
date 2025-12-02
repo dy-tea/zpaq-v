@@ -15,8 +15,87 @@ ZPAQ is a journaling archiver optimized for incremental backups with strong comp
 - **High-level compressor and decompressor** APIs
 - **Dynamic arrays** with modulo addressing
 - **State tables** for bit history tracking
+- **Command-line interface** compatible with original zpaq
 
-## Usage
+## Command-Line Interface
+
+### Building
+
+```bash
+v cmd/main.v -o zpaq-cli
+```
+
+### Usage
+
+```
+zpaq-cli command archive[.zpaq] files... -options...
+```
+
+Files... may be directory trees. Default is the whole archive.
+
+### Commands
+
+| Command | Description |
+|---------|-------------|
+| `a`, `add` | Append files to archive if dates have changed |
+| `x`, `extract` | Extract most recent versions of files |
+| `l`, `list` | List or compare external files to archive by dates |
+
+### Options
+
+| Option | Description |
+|--------|-------------|
+| `-all N` | Extract/list versions in N digit directories |
+| `-f`, `-force` | Add: append if contents changed. Extract: overwrite. List: compare contents |
+| `-index F` | Extract: create index F. Add: create suffix indexed by F |
+| `-key X` | Create or access encrypted archive with password X |
+| `-mN`, `-method N` | Compress level N (0..5 = faster..better, default 1) |
+| `-noattributes` | Ignore/don't save file attributes or permissions |
+| `-not files...` | Exclude files matching pattern. `*` and `?` wildcards supported |
+| `-only files...` | Include only files matching pattern (default: `*`) |
+| `-repack F` | Extract to new archive F |
+| `-sN`, `-summary N` | List: show top N by size. Add/Extract: show brief progress if N > 0 |
+| `-test` | Extract: verify but do not write files |
+| `-tN`, `-threads N` | Use N threads (default: 0 = auto) |
+| `-to out...` | Rename files... to out... or all to out/all |
+| `-until N` | Roll back archive to N'th update or -N from end |
+| `-fragment N` | Use 2^N KiB average fragment size (default: 6) |
+
+### Examples
+
+```bash
+# Add files to archive
+zpaq-cli add backup.zpaq file1.txt file2.txt
+
+# Add with compression level 0 (store)
+zpaq-cli add backup.zpaq data/ -m0
+
+# Add with compression level 1 (fast) and progress
+zpaq-cli add backup.zpaq data/ -m1 -s1
+
+# List archive contents
+zpaq-cli list backup.zpaq
+
+# Extract all files
+zpaq-cli extract backup.zpaq
+
+# Extract to specific directory
+zpaq-cli extract backup.zpaq -to output/
+
+# Extract and overwrite existing files
+zpaq-cli extract backup.zpaq -force
+
+# Test archive (verify without extracting)
+zpaq-cli extract backup.zpaq -test
+
+# Extract only .txt files
+zpaq-cli extract backup.zpaq -only "*.txt"
+
+# Extract excluding .log files
+zpaq-cli extract backup.zpaq -not "*.log"
+```
+
+## Library Usage
 
 ### Basic Compression
 
@@ -106,19 +185,20 @@ buf.reset_read()
 
 ## Module Structure
 
-- `src/types.v` - Type definitions and constants
-- `src/io.v` - I/O interfaces (Reader, Writer, FileReader, FileWriter, StringBuffer)
-- `src/sha1.v` - SHA1 and SHA256 hash implementations
-- `src/array.v` - Generic dynamic array with modulo addressing
-- `src/statetable.v` - State table for bit history (libzpaq data)
-- `src/zpaql.v` - ZPAQL Virtual Machine
-- `src/predictor.v` - Context mixing predictor (all 9 component types)
-- `src/encoder.v` - Arithmetic encoder (libzpaq compatible)
-- `src/decoder.v` - Arithmetic decoder (libzpaq compatible)
-- `src/compressor.v` - High-level compression API
-- `src/decompressor.v` - High-level decompression API
-- `src/levels.v` - Predefined compression levels (0-5)
-- `src/zpaq_test.v` - Unit tests
+- `cmd/main.v` - Command-line interface
+- `zpaq/types.v` - Type definitions and constants
+- `zpaq/io.v` - I/O interfaces (Reader, Writer, FileReader, FileWriter, StringBuffer)
+- `zpaq/sha1.v` - SHA1 and SHA256 hash implementations
+- `zpaq/array.v` - Generic dynamic array with modulo addressing
+- `zpaq/statetable.v` - State table for bit history (libzpaq data)
+- `zpaq/zpaql.v` - ZPAQL Virtual Machine
+- `zpaq/predictor.v` - Context mixing predictor (all 9 component types)
+- `zpaq/encoder.v` - Arithmetic encoder (libzpaq compatible)
+- `zpaq/decoder.v` - Arithmetic decoder (libzpaq compatible)
+- `zpaq/compressor.v` - High-level compression API
+- `zpaq/decompressor.v` - High-level decompression API
+- `zpaq/levels.v` - Predefined compression levels (0-5)
+- `zpaq/zpaq_test.v` - Unit tests
 
 ## Compression Levels
 
