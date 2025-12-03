@@ -49,23 +49,18 @@ pub const zpaql_b_eq_m = 2 // b = *c
 
 // Returns the length (in bytes) of opcode op
 pub fn oplen(op u8) int {
-	if op < 7 {
-		return 1
-	}
-	if op < 56 {
-		if op % 8 == 7 {
-			return 2
-		}
-		return 1
-	}
-	if op == 56 {
-		return 1 // error
-	}
+	// LJ (255) is a 3-byte instruction
 	if op == 255 {
-		return 3 // LJ
+		return 3
 	}
-	// 57-254 are 2-byte ops
-	return 2
+	// All opcodes where (op & 7) == 7 have a 1-byte operand (2 bytes total)
+	// This includes: 7, 15, 23, 31, 39, 47, 55, 63, 71, 79, 87, 95, 103, 111, 119, etc.
+	// Exception: opcode 63 (jmp) is a jump, which also has 1-byte operand
+	if (op & 7) == 7 {
+		return 2
+	}
+	// All other opcodes are 1-byte instructions
+	return 1
 }
 
 // Check if opcode is an error instruction
