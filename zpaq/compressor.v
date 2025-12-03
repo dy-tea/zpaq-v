@@ -113,13 +113,27 @@ pub fn (mut c Compressor) start_block(level int) {
 			pos++
 		}
 		c.z.hbegin = pos
-		// Find end of HCOMP code (next 0 byte, or look for 0,0 pattern)
-		// HCOMP code ends with HALT (44) followed by 0
+		// Find end of HCOMP code - need to parse opcodes and skip operands
+		// HCOMP code ends when we encounter a 0 byte that is NOT an operand
+		// Opcode format: if (opcode & 7) == 7 and opcode > 0, it has a 1-byte operand
+		// Special case: LJ (opcode 63) has a 2-byte operand
 		for pos < c.z.header.len {
-			if c.z.header[pos] == 0 {
+			op := c.z.header[pos]
+			if op == 0 {
+				// 0 byte that's not an operand = end of HCOMP
 				break
 			}
 			pos++
+			// Check if this opcode has operands
+			if (op & 7) == 7 {
+				// This opcode has a 1-byte operand (skip it)
+				if op == 63 {
+					// LJ has 2-byte operand
+					pos += 2
+				} else {
+					pos += 1
+				}
+			}
 		}
 		c.z.hend = pos
 	} else {

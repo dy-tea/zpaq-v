@@ -90,19 +90,20 @@ fn test_statetable_cminit() {
 	st := StateTable.new()
 
 	// State 0 (n0=0, n1=0) should have ~50% probability
-	// Using (n1+1)/(n0+n1+2) = 1/2 = 16384 out of 32768
+	// libzpaq formula: ((n1*2+1)<<22)/(n0+n1+1) = (1<<22)/1 = 4194304
+	// This represents 50% probability scaled to 2^23
 	p0 := st.cminit(0)
-	assert p0 == 16384
+	assert p0 == (1 << 22), 'cminit(0) = ${p0}, expected ${1 << 22}'
 
 	// State 1 (n0=1, n1=0) should have low probability
-	// (0+1)/(1+0+2) = 1/3 ~= 10923
+	// ((0*2+1)<<22)/(1+0+1) = (1<<22)/2 = 2097152 (~25% of 2^23)
 	p1 := st.cminit(1)
-	assert p1 >= 10000 && p1 <= 12000, 'cminit(1) = ${p1}'
+	assert p1 == (1 << 22) / 2, 'cminit(1) = ${p1}, expected ${(1 << 22) / 2}'
 
 	// State 3 (n0=0, n1=1) should have high probability
-	// (1+1)/(0+1+2) = 2/3 ~= 21845
+	// ((1*2+1)<<22)/(0+1+1) = (3<<22)/2 = 6291456 (~75% of 2^23)
 	p3 := st.cminit(3)
-	assert p3 >= 20000 && p3 <= 23000, 'cminit(3) = ${p3}'
+	assert p3 == (3 << 22) / 2, 'cminit(3) = ${p3}, expected ${(3 << 22) / 2}'
 }
 
 // Test FileReader
@@ -419,4 +420,101 @@ fn test_encoder_decoder_symmetry() {
 	// The output should contain encoded data
 	encoded := output.bytes()
 	assert encoded.len > 0, 'Encoder produced no output'
+}
+
+// Test codec round-trip with level 1 compression
+fn test_codec_roundtrip_level1() {
+// Test a simple round-trip through encoder/decoder
+original := 'Hello World!'
+
+// Create output buffer
+mut output := FileWriter.new()
+
+// Create ZPAQL with level 1 header
+level := get_compression_level(1)
+mut z := ZPAQL.new()
+z.header = level.hcomp.clone()
+
+// Parse header to find cend, hbegin, hend
+mut pos := 5
+if z.header.len >= 5 {
+n := int(z.header[4])
+for i := 0; i < n && pos < z.header.len; i++ {
+ctype := int(z.header[pos])
+if ctype < 0 || ctype >= compsize.len {
+break
+}
+pos += compsize[ctype]
+}
+}
+z.cend = pos
+if pos < z.header.len && z.header[pos] == 0 {
+pos++
+}
+z.hbegin = pos
+for pos < z.header.len {
+op := z.header[pos]
+if op == 0 {
+break
+}
+pos++
+if (op & 7) == 7 {
+if op == 63 {
+pos += 2
+} else {
+pos += 1
+}
+}
+}
+z.hend = pos
+
+z.inith()
+z.initp()
+
+mut pr := Predictor.new()
+pr.init(&z)
+
+mut enc := Encoder.new()
+enc.init(mut pr, mut output)
+
+// Encode each byte
+for b in original {
+enc.compress(int(b))
+}
+enc.compress(-1) // EOF
+enc.flush()
+
+encoded := output.bytes()
+assert encoded.len > 0, 'Encoder produced no output'
+
+// Now decode
+mut reader := FileReader.new(encoded)
+
+// Create new ZPAQL with same header
+mut z2 := ZPAQL.new()
+z2.header = level.hcomp.clone()
+z2.cend = z.cend
+z2.hbegin = z.hbegin
+z2.hend = z.hend
+z2.inith()
+z2.initp()
+
+mut pr2 := Predictor.new()
+pr2.init(&z2)
+
+mut dec := Decoder.new()
+dec.init(mut pr2, mut reader)
+
+// Decode bytes
+mut decoded := []u8{}
+for {
+c := dec.decompress()
+if c < 0 {
+break
+}
+decoded << u8(c)
+}
+
+decoded_str := decoded.bytestr()
+assert decoded_str == original, 'Mismatch: got "${decoded_str}", expected "${original}"'
 }

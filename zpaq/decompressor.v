@@ -185,12 +185,26 @@ pub fn (mut d Decompresser) find_block() bool {
 				pos++
 			}
 			d.z.hbegin = pos
-			// Find end of HCOMP code (look for 0 byte or HALT instruction)
+			// Find end of HCOMP code - need to parse opcodes and skip operands
+			// Opcode format: if (opcode & 7) == 7 and opcode > 0, it has a 1-byte operand
+			// Special case: LJ (opcode 63) has a 2-byte operand
 			for pos < hlen {
-				if d.z.header[pos] == 0 {
+				op := d.z.header[pos]
+				if op == 0 {
+					// 0 byte that's not an operand = end of HCOMP
 					break
 				}
 				pos++
+				// Check if this opcode has operands
+				if (op & 7) == 7 {
+					// This opcode has a 1-byte operand (skip it)
+					if op == 63 {
+						// LJ has 2-byte operand
+						pos += 2
+					} else {
+						pos += 1
+					}
+				}
 			}
 			d.z.hend = pos
 		} else {
@@ -285,6 +299,8 @@ pub fn (mut d Decompresser) find_filename() bool {
 	// For store mode, we read raw bytes without arithmetic decoding
 	// A new decoder is created for each segment to ensure clean state
 	if d.pr.is_modeled() {
+		// Reset predictor state for new segment (must match compressor behavior)
+		d.pr.reset()
 		d.dec = Decoder.new()
 		d.dec.init(mut d.pr, mut d.input)
 	}

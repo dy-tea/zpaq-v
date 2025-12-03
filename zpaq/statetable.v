@@ -84,17 +84,18 @@ pub fn (st &StateTable) next(state int, y int) int {
 
 // Get initial probability estimate for a state (0..32767)
 // Based on counts n0 and n1 stored in state table
+// cminit returns the initial probability of 1 * 2^23 for a given state
+// This matches libzpaq: ((ns[state*4+3]*2+1)<<22)/(ns[state*4+2]+ns[state*4+3]+1)
 pub fn (st &StateTable) cminit(state int) int {
 	if state < 0 || state >= 256 {
-		return 16384 // 50%
+		return 1 << 22 // 50% probability: (1<<23)/2 = 1<<22
 	}
 	// Get counts from state table
 	n0 := int(st.ns[state * 4 + 2])
 	n1 := int(st.ns[state * 4 + 3])
 
-	// Probability = (n1 + 1) / (n0 + n1 + 2) * 32768
-	total := n0 + n1 + 2
-	return ((n1 + 1) * 32768 + total / 2) / total
+	// Probability of 1 * 2^23 = ((n1*2+1) << 22) / (n0 + n1 + 1)
+	return ((n1 * 2 + 1) << 22) / (n0 + n1 + 1)
 }
 
 // Get count of 0 bits in state
