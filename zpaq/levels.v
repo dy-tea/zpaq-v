@@ -236,12 +236,12 @@ fn level_4_max() CompressionLevel {
 			81, // b=c
 			95, 0, // d=0
 			119, 0, // *d=0
-			59, 112, 33, // hash, *d=a, d++
-			59, 112, 33, // hash, *d=a, d++
-			59, 112, 33, // hash, *d=a, d++
-			59, 112, 33, // hash, *d=a, d++
-			59, 112, 33, // hash, *d=a, d++
-			59, 112, 33, // hash, *d=a, d++
+			59, 112, 25, // hash, *d=a, d++ (opcode 25)
+			59, 112, 25, // hash, *d=a, d++ (opcode 25)
+			59, 112, 25, // hash, *d=a, d++ (opcode 25)
+			59, 112, 25, // hash, *d=a, d++ (opcode 25)
+			59, 112, 25, // hash, *d=a, d++ (opcode 25)
+			59, 112, 25, // hash, *d=a, d++ (opcode 25)
 			59, 112, // hash, *d=a
 			56, // halt
 			0, // end of HCOMP
@@ -288,14 +288,14 @@ fn level_5_max() CompressionLevel {
 			81, // b=c
 			95, 0, // d=0
 			119, 0, // *d=0
-			59, 112, 33, // hash, *d=a, d++
-			59, 112, 33, // hash, *d=a, d++
-			59, 112, 33, // hash, *d=a, d++
-			59, 112, 33, // hash, *d=a, d++
-			59, 112, 33, // hash, *d=a, d++
-			59, 112, 33, // hash, *d=a, d++
-			59, 112, 33, // hash, *d=a, d++
-			59, 112, 33, // hash, *d=a, d++
+			59, 112, 25, // hash, *d=a, d++ (opcode 25)
+			59, 112, 25, // hash, *d=a, d++ (opcode 25)
+			59, 112, 25, // hash, *d=a, d++ (opcode 25)
+			59, 112, 25, // hash, *d=a, d++ (opcode 25)
+			59, 112, 25, // hash, *d=a, d++ (opcode 25)
+			59, 112, 25, // hash, *d=a, d++ (opcode 25)
+			59, 112, 25, // hash, *d=a, d++ (opcode 25)
+			59, 112, 25, // hash, *d=a, d++ (opcode 25)
 			59, 112, // hash, *d=a
 			56, // halt
 			0, // end of HCOMP
