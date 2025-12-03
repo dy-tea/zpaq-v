@@ -287,8 +287,9 @@ pub fn (mut pred Predictor) init(z &ZPAQL) {
 				pred.comp[i].cm = []u32{len: size}
 				// Initialize with 50% probability (stored in upper 17 bits per libzpaq)
 				// libzpaq: p[i]=stretch(cr.cm(cr.cxt)>>17)
+				// 50% probability = 16384, stored in upper 17 bits = 16384 << 17 = 1 << 31
 				for j := 0; j < size; j++ {
-					pred.comp[i].cm[j] = u32(1) << 31 // 50% = 16384 << 17
+					pred.comp[i].cm[j] = u32(1) << 31
 				}
 				cp += compsize[2]
 			}
@@ -301,7 +302,7 @@ pub fn (mut pred Predictor) init(z &ZPAQL) {
 				// Initialize CM with state-based probabilities
 				// libzpaq: p[i]=stretch(cr.cm(cr.cxt)>>8)
 				for j := 0; j < 256; j++ {
-					pred.comp[i].cm[j] = u32(pred.st.cminit(j)) << 8
+					pred.comp[i].cm[j] = u32(pred.st.cminit(j) << 8)
 				}
 				cp += compsize[3]
 			}
@@ -375,10 +376,11 @@ pub fn (mut pred Predictor) init(z &ZPAQL) {
 				// Initialize weights (wt[0], wt[1] pairs for each state)
 				// libzpaq: int *wt=(int*)&cr.cm[cr.cxt*2]
 				// p[i]=clamp2k((wt[0]*p[cp[2]]+wt[1]*64)>>16)
+				// libzpaq init: cr.cm[j*2]=1<<15; cr.cm[j*2+1]=clamp512k(stretch(st.cminit(j)>>8)*1024)
 				for k := 0; k < 256; k++ {
 					pred.comp[i].cm[k * 2] = u32(1 << 15) // wt[0] = 32768 (0.5 weight)
 					st_init := pred.st.cminit(k)
-					pred.comp[i].cm[k * 2 + 1] = u32(clamp512k(stretch(st_init) * 64))
+					pred.comp[i].cm[k * 2 + 1] = u32(clamp512k(stretch(st_init >> 8) * 1024))
 				}
 				cp += compsize[8]
 			}
