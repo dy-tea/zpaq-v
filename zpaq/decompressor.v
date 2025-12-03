@@ -161,23 +161,38 @@ pub fn (mut d Decompresser) find_block() bool {
 			d.z.header << u8(b)
 		}
 
-		// Parse header to set cend, hbegin, hend
-		if hlen >= 2 {
-			// Find end of code section (two consecutive zeros)
-			d.z.cend = 2
-			for d.z.cend < hlen - 1 {
-				if d.z.header[d.z.cend - 1] == 0 && d.z.header[d.z.cend] == 0 {
-					d.z.cend++
+		// Parse header to find cend, hbegin, hend
+		// Header format: hm hh ph pm n [comp1]...[compN] 0 [HCOMP code] 0 [PCOMP code] 0
+		if hlen >= 5 {
+			n := int(d.z.header[4])
+			mut pos := 5
+			// Skip component definitions
+			for i := 0; i < n && pos < hlen; i++ {
+				if pos >= hlen {
 					break
 				}
-				d.z.cend++
+				ctype := int(d.z.header[pos])
+				pos += compsize[ctype]
 			}
-			d.z.hbegin = d.z.cend
-			d.z.hend = hlen
+			// pos now points to the 0 byte that ends component definitions
+			d.z.cend = pos
+			// hbegin is after the 0 that ends components
+			if pos < hlen && d.z.header[pos] == 0 {
+				pos++
+			}
+			d.z.hbegin = pos
+			// Find end of HCOMP code (look for 0 byte or HALT instruction)
+			for pos < hlen {
+				if d.z.header[pos] == 0 {
+					break
+				}
+				pos++
+			}
+			d.z.hend = pos
 		} else {
-			d.z.cend = 0
-			d.z.hbegin = 0
-			d.z.hend = 0
+			d.z.cend = hlen
+			d.z.hbegin = hlen
+			d.z.hend = hlen
 		}
 
 		// Initialize arrays

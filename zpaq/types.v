@@ -74,17 +74,18 @@ pub fn iserr(op u8) bool {
 }
 
 // Component sizes in bytes for each component type index
+// This includes the type byte itself
 pub const compsize = [
-	0, // none
-	2, // const
-	3, // cm
-	2, // icm
-	3, // match
-	4, // avg
-	3, // mix2
-	3, // mix
-	3, // isse
-	3, // sse
+	0, // none (0)
+	2, // const (1): type + value
+	3, // cm (2): type + size + limit
+	2, // icm (3): type + size
+	3, // match (4): type + sizebits + bufbits
+	4, // avg (5): type + comp1 + comp2 + weight
+	3, // mix2 (6): type + size + rate
+	3, // mix (7): type + size + n
+	2, // isse (8): type + size
+	4, // sse (9): type + size + start + limit
 ]
 
 // Get component type from byte value

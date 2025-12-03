@@ -437,11 +437,17 @@ pub fn (mut z ZPAQL) execute() bool {
 				if idx < 256 {
 					z.r[idx] = z.a
 				}
-			} else if op >= 192 {
-				// H operations
+			} else if op >= 192 && op < 224 {
+				// A = H[N] - read from H array
 				idx := int(op - 192)
 				if idx < z.h.len {
 					z.a = z.h[idx]
+				}
+			} else if op >= 224 {
+				// H[N] = A - write to H array
+				idx := int(op - 224)
+				if idx < z.h.len {
+					z.h[idx] = z.a
 				}
 			}
 		}

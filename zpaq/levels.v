@@ -47,23 +47,26 @@ fn level_0_store() CompressionLevel {
 }
 
 // Level 1: Fast compression
-// Order-1 CM with hash table
-// HCOMP header: hm=4 hh=4 ph=0 pm=0 n=1 CM(16,4)
+// Order-1 CM with 256 entries (byte context)
 fn level_1_fast() CompressionLevel {
 	return CompressionLevel{
 		name: 'fast'
-		// Header: hm(4) hh(4) ph(0) pm(0) n(1) [comp: CM type(2) size(16) limit(4)] end(0)
+		// Header: hm(4) hh(4) ph(0) pm(0) n(1) [comp: CM type(2) size(8) limit(4)] 
+		// followed by HCOMP code, then end markers
 		hcomp: [
 			u8(4), // hm = log2 M size (16 bytes)
 			4, // hh = log2 H size (16 words)
 			0, // ph = 0 (no PCOMP)
 			0, // pm = 0
 			1, // n = 1 component
-			// Component 0: CM
+			// Component 0: CM with 256 entries (order-1)
 			2, // type = CM
-			16, // size bits
+			8, // size bits (256 entries = 2^8)
 			4, // limit (learning rate)
-			// End markers
+			0, // end of component definitions
+			// HCOMP code: H[0] = A (use input byte as context)
+			224, // H[0] = A
+			44, // HALT
 			0, // end of HCOMP
 			0, // end of PCOMP
 		]
@@ -95,9 +98,16 @@ fn level_2_normal() CompressionLevel {
 			// Component 3: ISSE
 			8, // type = ISSE
 			16, // size bits
-			// HCOMP code
-			0, // end
-			0, // end
+			0, // end of component definitions
+			// HCOMP code: compute order-1 to order-4 context hashes
+			// Simple version: H[i] = A for all (uses same context)
+			224, // H[0] = A
+			225, // H[1] = A
+			226, // H[2] = A
+			227, // H[3] = A
+			44, // HALT
+			0, // end of HCOMP
+			0, // end of PCOMP
 		]
 		hh: 5
 		hm: 5
@@ -135,9 +145,17 @@ fn level_3_high() CompressionLevel {
 			6, // type = MIX2
 			16, // size bits
 			16, // rate
-			// End
-			0,
-			0,
+			0, // end of components
+			// HCOMP code
+			224, // H[0] = A
+			225, // H[1] = A
+			226, // H[2] = A
+			227, // H[3] = A
+			228, // H[4] = A
+			229, // H[5] = A
+			44, // HALT
+			0, // end of HCOMP
+			0, // end of PCOMP
 		]
 		hh: 6
 		hm: 6
@@ -183,9 +201,19 @@ fn level_4_max() CompressionLevel {
 			16, // size bits
 			32, // start
 			4, // limit
-			// End
-			0,
-			0,
+			0, // end of components
+			// HCOMP code
+			224, // H[0] = A
+			225, // H[1] = A
+			226, // H[2] = A
+			227, // H[3] = A
+			228, // H[4] = A
+			229, // H[5] = A
+			230, // H[6] = A
+			231, // H[7] = A
+			44, // HALT
+			0, // end of HCOMP
+			0, // end of PCOMP
 		]
 		hh: 8
 		hm: 8
@@ -234,9 +262,20 @@ fn level_5_max() CompressionLevel {
 			18, // size bits
 			32, // start
 			4, // limit
-			// End
-			0,
-			0,
+			0, // end of components
+			// HCOMP code
+			224, // H[0] = A
+			225, // H[1] = A
+			226, // H[2] = A
+			227, // H[3] = A
+			228, // H[4] = A
+			229, // H[5] = A
+			230, // H[6] = A
+			231, // H[7] = A
+			232, // H[8] = A
+			44, // HALT
+			0, // end of HCOMP
+			0, // end of PCOMP
 		]
 		hh: 10
 		hm: 10

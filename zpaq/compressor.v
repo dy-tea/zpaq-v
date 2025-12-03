@@ -88,9 +88,42 @@ pub fn (mut c Compressor) start_block(level int) {
 	// Initialize ZPAQL with header
 	c.z.clear()
 	c.z.header = config.hcomp.clone()
-	c.z.cend = c.z.header.len
-	c.z.hbegin = c.z.cend
-	c.z.hend = c.z.cend
+	
+	// Parse header to find cend, hbegin, hend
+	// Header format: hm hh ph pm n [comp1]...[compN] 0 [HCOMP code] 0 [PCOMP code] 0
+	if c.z.header.len >= 5 {
+		n := int(c.z.header[4])
+		mut pos := 5
+		// Skip component definitions
+		for i := 0; i < n && pos < c.z.header.len; i++ {
+			if pos >= c.z.header.len {
+				break
+			}
+			ctype := int(c.z.header[pos])
+			pos += compsize[ctype]
+		}
+		// pos now points to the 0 byte that ends component definitions
+		c.z.cend = pos
+		// hbegin is after the 0 that ends components
+		if pos < c.z.header.len && c.z.header[pos] == 0 {
+			pos++
+		}
+		c.z.hbegin = pos
+		// Find end of HCOMP code (next 0 byte, or look for 0,0 pattern)
+		// HCOMP code ends with HALT (44) followed by 0
+		for pos < c.z.header.len {
+			if c.z.header[pos] == 0 {
+				break
+			}
+			pos++
+		}
+		c.z.hend = pos
+	} else {
+		c.z.cend = c.z.header.len
+		c.z.hbegin = c.z.header.len
+		c.z.hend = c.z.header.len
+	}
+	
 	c.z.inith()
 	c.z.initp()
 

@@ -279,9 +279,10 @@ pub fn (mut pred Predictor) init(mut z ZPAQL) {
 				pred.comp[i].limit = int(z.header[cp + 2]) // limit
 				size := 1 << pred.comp[i].a
 				pred.comp[i].cm = []u32{len: size}
-				// Initialize with initial probabilities
+				// Initialize with 50% probability (stored in upper 16 bits)
+				// Probability 16384 (50%) scaled to upper 16 bits = 16384 << 16 = 0x40000000
 				for j := 0; j < size; j++ {
-					pred.comp[i].cm[j] = u32(1 << 15) // 50% probability
+					pred.comp[i].cm[j] = u32(16384) << 16 // 50% probability in upper 16 bits
 				}
 				cp += compsize[2]
 			}

@@ -113,9 +113,9 @@ pub fn (mut d Decoder) decompress() int {
 		return -1
 	}
 
-	// First, decode EOF bit with probability 0
-	// If y=1, this is EOF marker
-	eof_bit := d.decode(0)
+	// First, decode EOF bit
+	// p=256 means P(EOF)=256/65536≈0.4%
+	eof_bit := d.decode(256)
 	if eof_bit != 0 {
 		return -1 // EOF
 	}

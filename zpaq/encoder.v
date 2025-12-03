@@ -79,16 +79,19 @@ pub fn (mut e Encoder) compress(c int) {
 		return
 	}
 
-	// First encode EOF/data bit with probability 0
+	// First encode EOF/data bit
 	// y=1 means EOF, y=0 means data follows
+	// Use small probability for EOF so data bytes are cheap to encode
+	// p=256 means P(EOF)=256/65536≈0.4%, P(data)≈99.6%
+	// This makes encoding data bytes very cheap (~0.006 bits overhead per byte)
 	if c == -1 {
-		// EOF marker
-		e.encode(1, 0)
+		// EOF marker (expensive)
+		e.encode(1, 256)
 		return
 	}
 
-	// Data byte follows
-	e.encode(0, 0)
+	// Data byte follows (cheap)
+	e.encode(0, 256)
 
 	// Encode each bit MSB first
 	for i := 7; i >= 0; i-- {
