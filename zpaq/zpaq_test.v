@@ -326,7 +326,7 @@ fn test_decompresser_new() {
 
 // Test component type enum
 fn test_comp_type() {
-	assert get_comp_type(0) == CompType.none
+	assert get_comp_type(0) == CompType.none_
 	assert get_comp_type(1) == CompType.cons
 	assert get_comp_type(2) == CompType.cm
 	assert get_comp_type(3) == CompType.icm
@@ -340,7 +340,7 @@ fn test_predictor_cycle() {
 	z.header = []u8{}
 
 	mut pr := Predictor.new()
-	pr.init(mut z)
+	pr.init(&z)
 
 	// Run a few predict/update cycles
 	for _ in 0 .. 8 {
@@ -405,7 +405,7 @@ fn test_encoder_decoder_symmetry() {
 	z.header = []u8{}
 
 	mut pr := Predictor.new()
-	pr.init(mut z)
+	pr.init(&z)
 
 	// Encode a simple byte sequence
 	mut output := FileWriter.new()

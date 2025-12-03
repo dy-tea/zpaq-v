@@ -4,7 +4,7 @@ module zpaq
 
 // Component types for compression models
 pub enum CompType {
-	none
+	none_
 	cons
 	cm
 	icm
@@ -75,23 +75,24 @@ pub fn iserr(op u8) bool {
 
 // Component sizes in bytes for each component type index
 // This includes the type byte itself
+// Reference: libzpaq.cpp compsize[256]={0,2,3,2,3,4,6,6,3,5}
 pub const compsize = [
 	0, // none (0)
 	2, // const (1): type + value
-	3, // cm (2): type + size + limit
-	2, // icm (3): type + size
+	3, // cm (2): type + sizebits + limit
+	2, // icm (3): type + sizebits
 	3, // match (4): type + sizebits + bufbits
-	4, // avg (5): type + comp1 + comp2 + weight
-	3, // mix2 (6): type + size + rate
-	3, // mix (7): type + size + n
-	2, // isse (8): type + size
-	4, // sse (9): type + size + start + limit
+	4, // avg (5): type + j + k + wt
+	6, // mix2 (6): type + sizebits + j + k + rate + mask
+	6, // mix (7): type + sizebits + j + m + rate + mask
+	3, // isse (8): type + sizebits + j (j = previous component to use)
+	5, // sse (9): type + sizebits + j + start + limit
 ]
 
 // Get component type from byte value
 pub fn get_comp_type(b u8) CompType {
 	return match int(b) {
-		0 { CompType.none }
+		0 { CompType.none_ }
 		1 { CompType.cons }
 		2 { CompType.cm }
 		3 { CompType.icm }
@@ -101,6 +102,6 @@ pub fn get_comp_type(b u8) CompType {
 		7 { CompType.mix }
 		8 { CompType.isse }
 		9 { CompType.sse }
-		else { CompType.none }
+		else { CompType.none_ }
 	}
 }

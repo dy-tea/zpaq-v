@@ -4,7 +4,7 @@ module zpaq
 
 // ZPAQL virtual machine for executing ZPAQL programs
 pub struct ZPAQL {
-mut:
+pub mut:
 	// Registers
 	a  u32 // accumulator
 	b  u32 // byte pointer

@@ -60,20 +60,12 @@ fn level_1_fast() CompressionLevel {
 			0, // pm = 0
 			1, // n = 1 component
 			// Component 0: CM with order-1 context
+			// Format: type sizebits limit
 			2, // type = CM
 			16, // size bits (64K entries)
 			4, // limit (learning rate)
 			0, // end of component definitions
-			// HCOMP code matching libzpaq's context computation:
-			// c-- *c=a a+=255 d=a *d=c (store byte, update location)
-			// d=0 hash *d=a halt
-			18, // c-- (opcode 18) (decrement c)
-			104, // *c=a (store input byte in M[c])
-			135, 255, // a+=255 (a = input_byte + 255)
-			88, // d=a (d = input_byte + 255, index to H location table)
-			112, // *d=a (H[d] = a... but we want H[d] = c, need to fix)
-			// Actually simpler: just use byte as context
-			// d=0 *d=a (store input byte as context for component 0)
+			// HCOMP code: d=0 *d=a halt (store input byte as context for component 0)
 			95, 0, // d=0
 			112, // *d=a (H[0] = input_byte)
 			56, // halt
@@ -97,36 +89,30 @@ fn level_2_normal() CompressionLevel {
 			0, // pm = 0
 			3, // n = 3 components (ICM + 2 ISSE)
 			// Component 0: ICM (order 1)
+			// Format: type sizebits
 			3, // type = ICM
 			16, // size bits
-			// Component 1: ISSE (order 2)
+			// Component 1: ISSE (order 2, uses component 0)
+			// Format: type sizebits j
 			8, // type = ISSE
-			16, // size bits (context from component 0)
-			// Component 2: ISSE (order 3)
+			16, // size bits
+			0, // j = input from component 0
+			// Component 2: ISSE (order 3, uses component 1)
+			// Format: type sizebits j
 			8, // type = ISSE
-			16, // size bits (context from component 1)
+			16, // size bits
+			1, // j = input from component 1
 			0, // end of component definitions
 			// HCOMP code: build context chain using HASH
-			// c-- *c=a a+=255 d=a *d=c (standard libzpaq byte storage)
-			// b=c d=0 *d=0 (reset context 0)
-			// hash *d=a d++ (order-1 context)
-			// hash *d=a d++ (order-2 context)  
-			// hash *d=a (order-3 context)
-			// halt
-			18, // c-- (opcode 18, not 26)
-			104, // *c=a
-			135, 255, // a+=255
-			88, // d=a
-			112, // *d=a
-			81, // b=c
+			// d=0 *d=0 hash *d=a d++ hash *d=a d++ hash *d=a halt
 			95, 0, // d=0
 			119, 0, // *d=0
 			59, // hash
 			112, // *d=a
-			25, // d++ (opcode 25, not 33)
+			25, // d++
 			59, // hash
 			112, // *d=a
-			25, // d++ (opcode 25, not 33)
+			25, // d++
 			59, // hash
 			112, // *d=a
 			56, // halt
@@ -150,42 +136,42 @@ fn level_3_high() CompressionLevel {
 			0, // pm = 0
 			5, // n = 5 components
 			// Component 0: ICM
+			// Format: type sizebits
 			3, // type = ICM
 			18, // size bits
-			// Component 1: ISSE
+			// Component 1: ISSE (uses component 0)
+			// Format: type sizebits j
 			8, // type = ISSE
 			18, // size bits
-			// Component 2: ISSE
+			0, // j = input from component 0
+			// Component 2: ISSE (uses component 1)
 			8, // type = ISSE
 			18, // size bits
-			// Component 3: ISSE
+			1, // j = input from component 1
+			// Component 3: ISSE (uses component 2)
 			8, // type = ISSE
 			18, // size bits
-			// Component 4: ISSE
+			2, // j = input from component 2
+			// Component 4: ISSE (uses component 3)
 			8, // type = ISSE  
 			18, // size bits
+			3, // j = input from component 3
 			0, // end of components
 			// HCOMP: order-1 through order-5 context chain
-			18, // c-- (opcode 18)
-			104, // *c=a
-			135, 255, // a+=255
-			88, // d=a
-			112, // *d=a
-			81, // b=c
 			95, 0, // d=0
 			119, 0, // *d=0
 			59, // hash (order 1)
 			112, // *d=a
-			25, // d++ (opcode 25)
+			25, // d++
 			59, // hash (order 2)
 			112, // *d=a
-			25, // d++ (opcode 25)
+			25, // d++
 			59, // hash (order 3)
 			112, // *d=a
-			25, // d++ (opcode 25)
+			25, // d++
 			59, // hash (order 4)
 			112, // *d=a
-			25, // d++ (opcode 25)
+			25, // d++
 			59, // hash (order 5)
 			112, // *d=a
 			56, // halt
@@ -209,39 +195,34 @@ fn level_4_max() CompressionLevel {
 			0, // pm = 0
 			7, // n = 7 components
 			// Component 0: ICM
+			// Format: type sizebits
 			3, // type = ICM
 			20, // size bits
 			// Component 1-5: ISSE chain
-			8, // type = ISSE
-			20, // size bits
-			8, // type = ISSE
-			20, // size bits
-			8, // type = ISSE
-			20, // size bits
-			8, // type = ISSE
-			20, // size bits
-			8, // type = ISSE
-			20, // size bits
+			// Format: type sizebits j
+			8, 20, 0, // ISSE uses component 0
+			8, 20, 1, // ISSE uses component 1
+			8, 20, 2, // ISSE uses component 2
+			8, 20, 3, // ISSE uses component 3
+			8, 20, 4, // ISSE uses component 4
 			// Component 6: MIX2
+			// Format: type sizebits j k rate mask
 			6, // type = MIX2
 			16, // size bits
+			4, // j = component 4
+			5, // k = component 5
 			24, // rate
+			255, // mask
 			0, // end of components
 			// HCOMP: order-1 through order-7 context chain
-			18, // c-- (opcode 18)
-			104, // *c=a
-			135, 255, // a+=255
-			88, // d=a
-			112, // *d=a
-			81, // b=c
 			95, 0, // d=0
 			119, 0, // *d=0
-			59, 112, 25, // hash, *d=a, d++ (opcode 25)
-			59, 112, 25, // hash, *d=a, d++ (opcode 25)
-			59, 112, 25, // hash, *d=a, d++ (opcode 25)
-			59, 112, 25, // hash, *d=a, d++ (opcode 25)
-			59, 112, 25, // hash, *d=a, d++ (opcode 25)
-			59, 112, 25, // hash, *d=a, d++ (opcode 25)
+			59, 112, 25, // hash, *d=a, d++
+			59, 112, 25, // hash, *d=a, d++
+			59, 112, 25, // hash, *d=a, d++
+			59, 112, 25, // hash, *d=a, d++
+			59, 112, 25, // hash, *d=a, d++
+			59, 112, 25, // hash, *d=a, d++
 			59, 112, // hash, *d=a
 			56, // halt
 			0, // end of HCOMP
@@ -264,38 +245,38 @@ fn level_5_max() CompressionLevel {
 			0, // pm = 0
 			9, // n = 9 components
 			// Component 0: ICM
+			// Format: type sizebits
 			3, // type = ICM
 			22, // size bits
 			// Components 1-7: ISSE chain
-			8, 22, // ISSE
-			8, 22, // ISSE
-			8, 22, // ISSE
-			8, 22, // ISSE
-			8, 22, // ISSE
-			8, 22, // ISSE
-			8, 22, // ISSE
+			// Format: type sizebits j
+			8, 22, 0, // ISSE uses component 0
+			8, 22, 1, // ISSE uses component 1
+			8, 22, 2, // ISSE uses component 2
+			8, 22, 3, // ISSE uses component 3
+			8, 22, 4, // ISSE uses component 4
+			8, 22, 5, // ISSE uses component 5
+			8, 22, 6, // ISSE uses component 6
 			// Component 8: MIX2
+			// Format: type sizebits j k rate mask
 			6, // type = MIX2
 			18, // size bits
+			6, // j = component 6
+			7, // k = component 7
 			24, // rate
+			255, // mask
 			0, // end of components
 			// HCOMP: order-1 through order-9 context chain
-			18, // c-- (opcode 18)
-			104, // *c=a
-			135, 255, // a+=255
-			88, // d=a
-			112, // *d=a
-			81, // b=c
 			95, 0, // d=0
 			119, 0, // *d=0
-			59, 112, 25, // hash, *d=a, d++ (opcode 25)
-			59, 112, 25, // hash, *d=a, d++ (opcode 25)
-			59, 112, 25, // hash, *d=a, d++ (opcode 25)
-			59, 112, 25, // hash, *d=a, d++ (opcode 25)
-			59, 112, 25, // hash, *d=a, d++ (opcode 25)
-			59, 112, 25, // hash, *d=a, d++ (opcode 25)
-			59, 112, 25, // hash, *d=a, d++ (opcode 25)
-			59, 112, 25, // hash, *d=a, d++ (opcode 25)
+			59, 112, 25, // hash, *d=a, d++
+			59, 112, 25, // hash, *d=a, d++
+			59, 112, 25, // hash, *d=a, d++
+			59, 112, 25, // hash, *d=a, d++
+			59, 112, 25, // hash, *d=a, d++
+			59, 112, 25, // hash, *d=a, d++
+			59, 112, 25, // hash, *d=a, d++
+			59, 112, 25, // hash, *d=a, d++
 			59, 112, // hash, *d=a
 			56, // halt
 			0, // end of HCOMP

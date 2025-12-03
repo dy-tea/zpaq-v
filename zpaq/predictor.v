@@ -229,7 +229,7 @@ pub fn Predictor.new() Predictor {
 }
 
 // Initialize the predictor from ZPAQL header
-pub fn (mut pred Predictor) init(mut z ZPAQL) {
+pub fn (mut pred Predictor) init(z &ZPAQL) {
 	unsafe {
 		pred.z = z
 	}
@@ -237,7 +237,7 @@ pub fn (mut pred Predictor) init(mut z ZPAQL) {
 	pred.hmap4 = 1
 
 	// Parse header for components
-	if z.header.len < 7 {
+	if z.header.len < 5 {
 		// No components defined - this is store mode, don't create any components
 		pred.comp = []Component{}
 		pred.p = []int{}
@@ -246,13 +246,14 @@ pub fn (mut pred Predictor) init(mut z ZPAQL) {
 	}
 
 	// Header format: hm hh ph pm n [comp1] [comp2] ... [compN] 0
-	// hm = log2 size of M array
-	// hh = log2 size of H array
-	// ph = log2 size of P array (PCOMP)
-	// pm = log2 size of M array (PCOMP)
-	// n = number of components
+	// hm = log2 size of M array (byte 0)
+	// hh = log2 size of H array (byte 1)
+	// ph = log2 size of P array (PCOMP) (byte 2)
+	// pm = log2 size of M array (PCOMP) (byte 3)
+	// n = number of components (byte 4)
+	// components start at byte 5
 
-	n := int(z.header[6])
+	n := int(z.header[4])
 	if n == 0 {
 		// Zero components - store mode
 		pred.comp = []Component{}
@@ -266,13 +267,14 @@ pub fn (mut pred Predictor) init(mut z ZPAQL) {
 	pred.h = []u32{len: n}
 
 	// Initialize components based on header
-	mut cp := 7 // current position in header
+	mut cp := 5 // current position in header (components start at byte 5)
 	for i := 0; i < n && cp < z.cend; i++ {
 		ctype := int(z.header[cp])
 		pred.comp[i] = Component.new()
 		pred.comp[i].ctype = ctype
 
 		// Read component parameters based on type
+		// Reference: libzpaq compsize[256]={0,2,3,2,3,4,6,6,3,5}
 		match ctype {
 			1 { // CONST - just outputs a constant probability
 				pred.comp[i].a = int(z.header[cp + 1])
@@ -283,21 +285,23 @@ pub fn (mut pred Predictor) init(mut z ZPAQL) {
 				pred.comp[i].limit = int(z.header[cp + 2]) // limit
 				size := 1 << pred.comp[i].a
 				pred.comp[i].cm = []u32{len: size}
-				// Initialize with 50% probability (stored in upper 16 bits)
+				// Initialize with 50% probability (stored in upper 17 bits per libzpaq)
+				// libzpaq: p[i]=stretch(cr.cm(cr.cxt)>>17)
 				for j := 0; j < size; j++ {
-					pred.comp[i].cm[j] = initial_cm_probability
+					pred.comp[i].cm[j] = u32(1) << 31 // 50% = 16384 << 17
 				}
 				cp += compsize[2]
 			}
 			3 { // ICM - indirect context model
 				pred.comp[i].a = int(z.header[cp + 1]) // sizebits
-				// ICM ht size is 64 * 2^sizebits (same as libzpaq's cr.ht.resize(64, cp[1]))
-				size := 1 << pred.comp[i].a
+				// ICM ht size is 16 * 2^(sizebits+2) = 64 * 2^sizebits
+				size := 16 << (pred.comp[i].a + 2)
 				pred.comp[i].cm = []u32{len: 256}
-				pred.comp[i].ht = []u8{len: size * 64}
+				pred.comp[i].ht = []u8{len: size}
 				// Initialize CM with state-based probabilities
+				// libzpaq: p[i]=stretch(cr.cm(cr.cxt)>>8)
 				for j := 0; j < 256; j++ {
-					pred.comp[i].cm[j] = u32(pred.st.cminit(j) << 8)
+					pred.comp[i].cm[j] = u32(pred.st.cminit(j)) << 8
 				}
 				cp += compsize[3]
 			}
@@ -312,55 +316,85 @@ pub fn (mut pred Predictor) init(mut z ZPAQL) {
 				cp += compsize[4]
 			}
 			5 { // AVG - average of two predictions
-				pred.comp[i].a = int(z.header[cp + 1]) // first component
-				pred.comp[i].b = int(z.header[cp + 2]) // second component
+				// Format: type j k wt
+				pred.comp[i].a = int(z.header[cp + 1]) // j = first component
+				pred.comp[i].b = int(z.header[cp + 2]) // k = second component
 				pred.comp[i].c = int(z.header[cp + 3]) // weight (0-256)
 				cp += compsize[5]
 			}
 			6 { // MIX2 - weighted mix of 2 components
+				// Format: type sizebits j k rate mask
 				pred.comp[i].a = int(z.header[cp + 1]) // sizebits
 				size := 1 << pred.comp[i].a
-				pred.comp[i].b = int(z.header[cp + 2]) // rate
-				pred.comp[i].c = size
+				pred.comp[i].b = int(z.header[cp + 2]) // j = first input component
+				pred.comp[i].c = size // c = size (number of contexts)
+				// Read j, k, rate, mask
+				// j = cp[2], k = cp[3], rate = cp[4], mask = cp[5]
 				pred.comp[i].a16 = []u16{len: size, init: 32768}
+				// Store additional parameters for MIX2
+				// a = sizebits, b = j, c = size
+				// We need to store j, k, rate, mask - use Component fields creatively
+				// Store in cm array temporarily
+				pred.comp[i].cm = []u32{len: 4}
+				pred.comp[i].cm[0] = u32(z.header[cp + 2]) // j
+				pred.comp[i].cm[1] = u32(z.header[cp + 3]) // k
+				pred.comp[i].cm[2] = u32(z.header[cp + 4]) // rate
+				pred.comp[i].cm[3] = u32(z.header[cp + 5]) // mask
 				cp += compsize[6]
 			}
 			7 { // MIX - weighted mix of multiple components
+				// Format: type sizebits j m rate mask
 				pred.comp[i].a = int(z.header[cp + 1]) // sizebits
-				m := int(z.header[cp + 2]) // number of inputs
-				pred.comp[i].b = m
 				size := 1 << pred.comp[i].a
-				pred.comp[i].cm = []u32{len: size * m}
+				j := int(z.header[cp + 2]) // j = start component
+				m := int(z.header[cp + 3]) // m = number of inputs
+				rate := int(z.header[cp + 4]) // rate
+				mask := int(z.header[cp + 5]) // mask
+				pred.comp[i].b = j // first input component
 				pred.comp[i].c = size
-				// Initialize weights equally
-				for j := 0; j < size * m; j++ {
-					pred.comp[i].cm[j] = u32(65536 / m)
+				pred.comp[i].limit = m // number of inputs
+				// Store rate and mask
+				pred.comp[i].ht = []u8{len: 2}
+				pred.comp[i].ht[0] = u8(rate)
+				pred.comp[i].ht[1] = u8(mask)
+				pred.comp[i].cm = []u32{len: size * m}
+				// Initialize weights
+				for k := 0; k < size * m; k++ {
+					pred.comp[i].cm[k] = u32(65536 / m) << 8
 				}
 				cp += compsize[7]
 			}
 			8 { // ISSE - indirect SSE chain
+				// Format: type sizebits j
 				pred.comp[i].a = int(z.header[cp + 1]) // sizebits
-				// ISSE ht size is 64 * 2^sizebits (same as libzpaq's cr.ht.resize(64, cp[1]))
-				size := 1 << pred.comp[i].a
-				pred.comp[i].ht = []u8{len: size * 64}
+				pred.comp[i].b = int(z.header[cp + 2]) // j = input component
+				// ISSE ht size is 16 * 2^(sizebits+2) = 64 * 2^sizebits
+				size := 16 << (pred.comp[i].a + 2)
+				pred.comp[i].ht = []u8{len: size}
 				pred.comp[i].cm = []u32{len: 512}
-				// Initialize weights
-				for j := 0; j < 256; j++ {
-					pred.comp[i].cm[j * 2] = u32(1 << 15)
-					st_init := pred.st.cminit(j)
-					pred.comp[i].cm[j * 2 + 1] = u32(clamp512k(stretch(st_init >> 3) * 1024))
+				// Initialize weights (wt[0], wt[1] pairs for each state)
+				// libzpaq: int *wt=(int*)&cr.cm[cr.cxt*2]
+				// p[i]=clamp2k((wt[0]*p[cp[2]]+wt[1]*64)>>16)
+				for k := 0; k < 256; k++ {
+					pred.comp[i].cm[k * 2] = u32(1 << 15) // wt[0] = 32768 (0.5 weight)
+					st_init := pred.st.cminit(k)
+					pred.comp[i].cm[k * 2 + 1] = u32(clamp512k(stretch(st_init) * 64))
 				}
 				cp += compsize[8]
 			}
 			9 { // SSE - secondary symbol estimation
+				// Format: type sizebits j start limit
 				pred.comp[i].a = int(z.header[cp + 1]) // sizebits
+				pred.comp[i].b = int(z.header[cp + 2]) // j = input component
 				size := 1 << pred.comp[i].a
 				pred.comp[i].cm = []u32{len: size * 32}
-				pred.comp[i].limit = int(z.header[cp + 3]) * 4
+				pred.comp[i].limit = int(z.header[cp + 4]) * 4 // limit (scaled)
 				// Initialize with linear stretch
-				for j := 0; j < size * 32; j++ {
-					q := (j & 31) * 64 - 992
-					pred.comp[i].cm[j] = u32(squash(q) << 17) | u32(z.header[cp + 2])
+				// libzpaq: p[i]=stretch(((cr.cm(cr.cxt)>>10)*(64-wt)+(cr.cm(cr.cxt+1)>>10)*wt)>>13)
+				start := int(z.header[cp + 3])
+				for k := 0; k < size * 32; k++ {
+					q := (k & 31) * 64 - 992
+					pred.comp[i].cm[k] = u32(squash(q) << 17) | u32(start)
 				}
 				cp += compsize[9]
 			}
@@ -434,6 +468,7 @@ fn (mut pred Predictor) find_ht(mut ht []u8, sizebits int, cxt u32) int {
 }
 
 // Predict next bit probability (1..32767)
+// Reference: libzpaq Predictor::predict0()
 pub fn (mut pred Predictor) predict() int {
 	n := pred.comp.len
 	if n == 0 {
@@ -447,12 +482,15 @@ pub fn (mut pred Predictor) predict() int {
 			1 { // CONST
 				pred.p[i] = (cr.a - 128) * 16
 			}
-			2 { // CM
+			2 { // CM - context model
+				// libzpaq: cr.cxt=h[i]^hmap4; p[i]=stretch(cr.cm(cr.cxt)>>17)
 				cr.cxt = u32(pred.h[i]) ^ pred.hmap4
 				idx := int(cr.cxt) & (cr.cm.len - 1)
-				pred.p[i] = stretch(int(cr.cm[idx] >> 16))
+				pred.p[i] = stretch(int(cr.cm[idx] >> 17))
 			}
-			3 { // ICM
+			3 { // ICM - indirect context model
+				// libzpaq: if (c8==1 || (c8&0xf0)==16) cr.c=find(cr.ht, cp[1]+2, h[i]+16*c8)
+				// cr.cxt=cr.ht[cr.c+(hmap4&15)]; p[i]=stretch(cr.cm(cr.cxt)>>8)
 				if pred.c8 == 1 || (pred.c8 & 0xf0) == 16 {
 					cr.c = pred.find_ht(mut cr.ht, cr.a + 2, u32(pred.h[i]) + 16 * pred.c8)
 				}
@@ -460,66 +498,81 @@ pub fn (mut pred Predictor) predict() int {
 				pred.p[i] = stretch(int(cr.cm[int(cr.cxt)] >> 8))
 			}
 			4 { // MATCH
+				// libzpaq: p[i]=stretch(dt2k[cr.a]*(cr.c*-2+1)&32767)
 				if cr.a == 0 {
 					pred.p[i] = 0
 				} else {
-					// Predict based on match
 					idx := (cr.limit - cr.b) & (cr.ht.len - 1)
 					cr.c = int((cr.ht[idx] >> (7 - int(cr.cxt))) & 1)
-					weight := dt2k_table[cr.a]
-					pred.p[i] = stretch(weight * (cr.c * 2 - 1) + 16384)
+					weight := dt2k_table[cr.a & 255]
+					pred.p[i] = stretch((weight * (cr.c * -2 + 1)) & 32767)
 				}
 			}
-			5 { // AVG
-				if cr.a < n && cr.b < n {
-					pred.p[i] = (pred.p[cr.a] * cr.c + pred.p[cr.b] * (256 - cr.c)) >> 8
+			5 { // AVG - average of two predictions
+				// libzpaq: p[i]=(p[cp[1]]*cp[3]+p[cp[2]]*(256-cp[3]))>>8
+				j := cr.a // first component index
+				k := cr.b // second component index
+				wt := cr.c // weight
+				if j < n && k < n {
+					pred.p[i] = (pred.p[j] * wt + pred.p[k] * (256 - wt)) >> 8
 				} else {
 					pred.p[i] = 0
 				}
 			}
-			6 { // MIX2
-				cr.cxt = (u32(pred.h[i]) + (pred.c8 & u32(cr.b))) & u32(cr.c - 1)
+			6 { // MIX2 - weighted mix of 2 components
+				// libzpaq: cr.cxt=((h[i]+(c8&cp[5]))&(cr.c-1))
+				// int w=cr.a16[cr.cxt]; p[i]=(w*p[cp[2]]+(65536-w)*p[cp[3]])>>16
+				j := int(cr.cm[0]) // first input component
+				k := int(cr.cm[1]) // second input component
+				mask := int(cr.cm[3]) // mask
+				cr.cxt = (u32(pred.h[i]) + (pred.c8 & u32(mask))) & u32(cr.c - 1)
 				w := int(cr.a16[int(cr.cxt)])
-				j := cr.a // first input component
-				k := cr.a + 1 // second input component (assuming consecutive)
-				if j < n && k < n && j > 0 && k > 0 {
-					// Default to mixing with previous predictions
-					pred.p[i] = clamp2k((w * pred.p[j - 1] + (65536 - w) * pred.p[k - 1]) >> 16)
+				if j < n && k < n {
+					pred.p[i] = clamp2k((w * pred.p[j] + (65536 - w) * pred.p[k]) >> 16)
 				} else {
 					pred.p[i] = 0
 				}
 			}
-			7 { // MIX
-				m := cr.b // number of inputs
-				cr.cxt = u32(pred.h[i]) + pred.c8
-				idx := int(cr.cxt & u32(cr.c - 1)) * m
+			7 { // MIX - weighted mix of m components
+				// libzpaq: cr.cxt=h[i]+(c8&cp[5]); cr.cxt=(cr.cxt&(cr.c-1))*m
+				// p[i]=0; for j=0..m-1: p[i]+=(wt[j]>>8)*p[cp[2]+j]; p[i]=clamp2k(p[i]>>8)
+				j := cr.b // first input component
+				m := cr.limit // number of inputs
+				mask := int(cr.ht[1]) // mask
+				cr.cxt = u32((int(pred.h[i]) + (int(pred.c8) & mask)) & (cr.c - 1))
+				idx := int(cr.cxt) * m
 				mut sum := 0
-				for j := 0; j < m && (i - m + j) >= 0; j++ {
-					wt := int(cr.cm[idx + j]) >> 8
-					sum += wt * pred.p[i - m + j]
+				for l := 0; l < m && (j + l) < n; l++ {
+					wt := int(cr.cm[idx + l]) >> 8
+					sum += wt * pred.p[j + l]
 				}
 				pred.p[i] = clamp2k(sum >> 8)
 			}
-			8 { // ISSE
+			8 { // ISSE - indirect SSE chain
+				// libzpaq: if (c8==1 || (c8&0xf0)==16) cr.c=find(cr.ht, cp[1]+2, h[i]+16*c8)
+				// cr.cxt=cr.ht[cr.c+(hmap4&15)]; int *wt=&cr.cm[cr.cxt*2]
+				// p[i]=clamp2k((wt[0]*p[cp[2]]+wt[1]*64)>>16)
 				if pred.c8 == 1 || (pred.c8 & 0xf0) == 16 {
 					cr.c = pred.find_ht(mut cr.ht, cr.a + 2, u32(pred.h[i]) + 16 * pred.c8)
 				}
 				cr.cxt = u32(cr.ht[cr.c + int(pred.hmap4 & 15)])
 				wt0 := int(cr.cm[int(cr.cxt) * 2])
 				wt1 := int(cr.cm[int(cr.cxt) * 2 + 1])
-				if i > 0 {
-					pred.p[i] = clamp2k((wt0 * pred.p[i - 1] + wt1 * 64) >> 16)
+				j := cr.b // input component
+				if j < n {
+					pred.p[i] = clamp2k((wt0 * pred.p[j] + wt1 * 64) >> 16)
 				} else {
 					pred.p[i] = clamp2k(wt1 >> 10)
 				}
 			}
-			9 { // SSE
+			9 { // SSE - secondary symbol estimation
+				// libzpaq: cr.cxt=(h[i]+c8)*32; pq=p[cp[2]]+992; clamp to 0..1983
+				// wt=pq&63; pq>>=6; p[i]=stretch((cm[cr.cxt+pq]>>10*(64-wt)+cm[cr.cxt+pq+1]>>10*wt)>>13)
+				j := cr.b // input component
 				cr.cxt = (u32(pred.h[i]) + pred.c8) * 32
-				mut pq := 0
-				if i > 0 {
-					pq = pred.p[i - 1] + 992
-				} else {
-					pq = 992
+				mut pq := 992
+				if j < n {
+					pq = pred.p[j] + 992
 				}
 				if pq < 0 {
 					pq = 0
@@ -551,6 +604,7 @@ pub fn (mut pred Predictor) predict() int {
 }
 
 // Update model after seeing actual bit y (0 or 1)
+// Reference: libzpaq Predictor::update0()
 pub fn (mut pred Predictor) update(y int) {
 	n := pred.comp.len
 
@@ -560,15 +614,18 @@ pub fn (mut pred Predictor) update(y int) {
 		match cr.ctype {
 			1 { // CONST - no update
 			}
-			2 { // CM
+			2 { // CM - context model
+				// libzpaq: train(cr, y) which does:
+				// err = y*32767 - (cm>>17); cm += err*limit rounded
 				idx := int(cr.cxt) & (cr.cm.len - 1)
 				mut v := cr.cm[idx]
-				// Adjust prediction based on error
-				err := y * 32767 - int(v >> 16)
+				err := y * 32767 - int(v >> 17)
 				v = u32(int(v) + ((err * cr.limit + (1 << 12)) >> 13))
 				cr.cm[idx] = v
 			}
-			3 { // ICM
+			3 { // ICM - indirect context model
+				// libzpaq: cr.ht[cr.c+(hmap4&15)]=st.next(cr.ht[cr.c+(hmap4&15)], y)
+				// pn += (y*32767-(pn>>8))>>2
 				cr.ht[cr.c + int(pred.hmap4 & 15)] = u8(pred.st.next(int(cr.ht[cr.c +
 					int(pred.hmap4 & 15)]), y))
 				mut v := cr.cm[int(cr.cxt)]
@@ -584,15 +641,14 @@ pub fn (mut pred Predictor) update(y int) {
 				cr.cxt++
 				if cr.cxt >= 8 {
 					cr.cxt = 0
-					cr.limit = (cr.limit + 1) & (cr.ht.len - 1)
+					cr.limit++
+					cr.limit &= (cr.ht.len - 1)
 					if cr.a == 0 {
 						// Look for match
 						h := pred.h[i]
-						match_pos := int(cr.cm[int(h) & (cr.cm.len - 1)])
-						cr.b = cr.limit - match_pos
-						if cr.b != 0 && (cr.b & (cr.ht.len - 1)) != 0 {
+						cr.b = cr.limit - int(cr.cm[int(h) & (cr.cm.len - 1)])
+						if cr.b & (cr.ht.len - 1) != 0 {
 							// Count match length
-							cr.a = 0
 							for cr.a < 255 {
 								idx1 := (cr.limit - cr.a - 1) & (cr.ht.len - 1)
 								idx2 := (cr.limit - cr.a - cr.b - 1) & (cr.ht.len - 1)
@@ -602,10 +658,8 @@ pub fn (mut pred Predictor) update(y int) {
 								cr.a++
 							}
 						}
-					} else {
-						if cr.a < 255 {
-							cr.a++
-						}
+					} else if cr.a < 255 {
+						cr.a++
 					}
 					cr.cm[int(pred.h[i]) & (cr.cm.len - 1)] = u32(cr.limit)
 				}
@@ -613,10 +667,15 @@ pub fn (mut pred Predictor) update(y int) {
 			5 { // AVG - no update
 			}
 			6 { // MIX2
-				err := (y * 32767 - squash(pred.p[i])) * cr.b >> 5
-				if i >= 2 {
+				// libzpaq: err=(y*32767-squash(p[i]))*cp[4]>>5
+				// w += err*(p[cp[2]]-p[cp[3]]) rounded
+				j := int(cr.cm[0]) // first input component
+				k := int(cr.cm[1]) // second input component
+				rate := int(cr.cm[2]) // rate
+				err := (y * 32767 - squash(pred.p[i])) * rate >> 5
+				if j < n && k < n {
 					mut w := int(cr.a16[int(cr.cxt)])
-					w += (err * (pred.p[i - 2] - pred.p[i - 1]) + (1 << 12)) >> 13
+					w += (err * (pred.p[j] - pred.p[k]) + (1 << 12)) >> 13
 					if w < 0 {
 						w = 0
 					}
@@ -627,20 +686,28 @@ pub fn (mut pred Predictor) update(y int) {
 				}
 			}
 			7 { // MIX
-				m := cr.b
-				err := (y * 32767 - squash(pred.p[i])) * 4
-				idx := int(cr.cxt & u32(cr.c - 1)) * m
-				for j := 0; j < m && (i - m + j) >= 0; j++ {
-					wt := clamp512k(int(cr.cm[idx + j]) + ((err * pred.p[i - m + j] +
+				// libzpaq: err=(y*32767-squash(p[i]))*cp[4]>>4
+				// wt[j]=clamp512k(wt[j]+(err*p[cp[2]+j] rounded))
+				jj := cr.b // first input component
+				m := cr.limit // number of inputs
+				rate := int(cr.ht[0])
+				err := (y * 32767 - squash(pred.p[i])) * rate >> 4
+				idx := int(cr.cxt) * m
+				for l := 0; l < m && (jj + l) < n; l++ {
+					wt := clamp512k(int(cr.cm[idx + l]) + ((err * pred.p[jj + l] +
 						(1 << 12)) >> 13))
-					cr.cm[idx + j] = u32(wt)
+					cr.cm[idx + l] = u32(wt)
 				}
 			}
 			8 { // ISSE
+				// libzpaq: err=y*32767-squash(p[i])
+				// wt[0]=clamp512k(wt[0]+(err*p[cp[2]] rounded))
+				// wt[1]=clamp512k(wt[1]+(err+16)>>5)
+				// cr.ht[cr.c+(hmap4&15)]=st.next(cr.cxt, y)
+				j := cr.b // input component
 				err := y * 32767 - squash(pred.p[i])
-				// Bounds check: ISSE at index 0 has no previous component
-				if i > 0 {
-					wt0 := clamp512k(int(cr.cm[int(cr.cxt) * 2]) + ((err * pred.p[i - 1] +
+				if j < n {
+					wt0 := clamp512k(int(cr.cm[int(cr.cxt) * 2]) + ((err * pred.p[j] +
 						(1 << 12)) >> 13))
 					wt1 := clamp512k(int(cr.cm[int(cr.cxt) * 2 + 1]) + ((err + 16) >> 5))
 					cr.cm[int(cr.cxt) * 2] = u32(wt0)
@@ -649,6 +716,7 @@ pub fn (mut pred Predictor) update(y int) {
 				cr.ht[cr.c + int(pred.hmap4 & 15)] = u8(pred.st.next(int(cr.cxt), y))
 			}
 			9 { // SSE
+				// libzpaq: train(cr, y)
 				idx := int(cr.cxt) & (cr.cm.len - 1)
 				mut v := cr.cm[idx]
 				err := y * 32767 - int(v >> 17)

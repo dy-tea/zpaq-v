@@ -151,7 +151,7 @@ pub fn (mut c Compressor) start_block(level int) {
 
 	// Initialize predictor
 	c.pr = Predictor.new()
-	c.pr.init(mut c.z)
+	c.pr.init(&c.z)
 
 	c.state = comp_state_block
 }
@@ -172,7 +172,7 @@ pub fn (mut c Compressor) start_block_hcomp(hcomp string) {
 
 	// Initialize predictor
 	c.pr = Predictor.new()
-	c.pr.init(mut c.z)
+	c.pr.init(&c.z)
 
 	c.state = comp_state_block
 }

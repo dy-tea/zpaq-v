@@ -205,7 +205,7 @@ pub fn (mut d Decompresser) find_block() bool {
 
 		// Initialize predictor
 		d.pr = Predictor.new()
-		d.pr.init(mut d.z)
+		d.pr.init(&d.z)
 
 		d.state = decomp_state_block
 		return true
