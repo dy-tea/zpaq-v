@@ -410,6 +410,9 @@ fn run_list(cfg Config) ! {
 
 			// Check if file matches filters
 			if !should_include(filename, cfg.only_files, cfg.not_files) {
+				// Still need to decompress to skip this segment
+				for decomp.decompress(65536) {}
+				decomp.read_segment_end()
 				continue
 			}
 
@@ -420,7 +423,8 @@ fn run_list(cfg Config) ! {
 			}
 			total_files++
 
-			// Skip decompression for listing
+			// Must decompress to find segment end (ZPAQ format doesn't store compressed size)
+			for decomp.decompress(65536) {}
 			decomp.read_segment_end()
 		}
 	}

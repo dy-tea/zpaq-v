@@ -291,12 +291,6 @@ pub fn (mut c Compressor) end_segment() {
 
 			// Flush encoder (writes remaining state)
 			c.enc.flush()
-
-			// Write 4 zero bytes as end marker
-			c.output.put(0)
-			c.output.put(0)
-			c.output.put(0)
-			c.output.put(0)
 		}
 
 		// Compute SHA1 hash
