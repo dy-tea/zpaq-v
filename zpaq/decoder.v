@@ -83,12 +83,15 @@ pub fn (mut d Decoder) decode(p int) int {
 	mid := d.low + u32((u64(range_) * u64(pr)) >> 16)
 
 	// Determine bit based on code position
+	// libzpaq: if (curr<=mid) y=1, high=mid; else y=0, low=mid+1;
+	// y=1 means code is in lower half (probability p), y=0 means upper half (probability 1-p)
 	mut y := 0
-	if d.code > mid {
+	if d.code <= mid {
 		y = 1
-		d.low = mid + 1
-	} else {
 		d.high = mid
+	} else {
+		y = 0
+		d.low = mid + 1
 	}
 
 	// Read more bytes when range is small

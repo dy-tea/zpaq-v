@@ -59,10 +59,13 @@ pub fn (mut e Encoder) encode(y int, p int) {
 	range_ := e.high - e.low
 	mid := e.low + u32((u64(range_) * u64(pr)) >> 16)
 
+	// libzpaq: if (y) high=mid; else low=mid+1;
+	// y=1 means take lower portion [low, mid] (probability p)
+	// y=0 means take upper portion (mid, high] (probability 1-p)
 	if y != 0 {
-		e.low = mid + 1
-	} else {
 		e.high = mid
+	} else {
+		e.low = mid + 1
 	}
 
 	// Output bytes when range is small enough

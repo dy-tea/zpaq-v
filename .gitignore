@@ -24,3 +24,7 @@ zpaq-cli
 # OS files
 .DS_Store
 Thumbs.db
+# Test directories
+testdir/
+extracted/
+test_archive_*.zpaq
