@@ -379,6 +379,12 @@ fn run_extract(cfg Config) ! {
 	println('Files ${if cfg.test_mode { "verified" } else { "extracted" }}: ${extracted}')
 }
 
+// Helper: skip to end of current segment (required because ZPAQ format doesn't store compressed size)
+fn skip_segment(mut decomp zpaq.Decompresser) {
+	for decomp.decompress(65536) {}
+	decomp.read_segment_end()
+}
+
 // List command: list archive contents
 fn run_list(cfg Config) ! {
 	archive := if cfg.archive.ends_with('.zpaq') {
@@ -410,9 +416,7 @@ fn run_list(cfg Config) ! {
 
 			// Check if file matches filters
 			if !should_include(filename, cfg.only_files, cfg.not_files) {
-				// Still need to decompress to skip this segment
-				for decomp.decompress(65536) {}
-				decomp.read_segment_end()
+				skip_segment(mut decomp)
 				continue
 			}
 
@@ -423,9 +427,7 @@ fn run_list(cfg Config) ! {
 			}
 			total_files++
 
-			// Must decompress to find segment end (ZPAQ format doesn't store compressed size)
-			for decomp.decompress(65536) {}
-			decomp.read_segment_end()
+			skip_segment(mut decomp)
 		}
 	}
 

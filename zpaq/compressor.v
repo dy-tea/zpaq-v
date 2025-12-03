@@ -289,7 +289,9 @@ pub fn (mut c Compressor) end_segment() {
 			// Compressed mode: encode EOF marker using compress(-1)
 			c.enc.compress(-1)
 
-			// Flush encoder (writes remaining state)
+			// Flush encoder (writes remaining state bytes)
+			// The flush provides proper termination - no additional end marker needed
+			// since the decoder detects EOF through the encoded EOF marker
 			c.enc.flush()
 		}
 
