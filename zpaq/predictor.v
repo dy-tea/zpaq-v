@@ -436,7 +436,7 @@ pub fn (mut pred Predictor) init(z &ZPAQL) {
 			}
 			2 { // CM - context model
 				pred.comp[i].a = int(z.header[cp + 1]) // sizebits
-				pred.comp[i].limit = int(z.header[cp + 2]) // limit (learning rate)
+				pred.comp[i].limit = int(z.header[cp + 2]) // limit parameter for update calculation
 				size := 1 << pred.comp[i].a
 				pred.comp[i].cm = []u32{len: size}
 				// Initialize with 50% probability (stored in upper 17 bits per libzpaq)
@@ -773,11 +773,11 @@ pub fn (mut pred Predictor) update(y int) {
 			}
 			2 { // CM - context model
 				// libzpaq train(cr, y):
-				// Simplified update: error = y*32767 - (cm>>17); cm += error*limit
+				// Update: error = y*32767 - (cm>>17); cm += error*limit with fixed-point rounding
 				idx := int(cr.cxt) & (cr.cm.len - 1)
 				mut v := cr.cm[idx]
 				err := y * 32767 - int(v >> 17)
-				// Simple linear update scaled by limit
+				// Fixed-point update: (err * limit + 4096) >> 13 provides rounding
 				v = u32(int(v) + ((err * cr.limit + (1 << 12)) >> 13))
 				cr.cm[idx] = v
 			}

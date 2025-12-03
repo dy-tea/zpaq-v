@@ -423,26 +423,31 @@ fn test_encoder_decoder_symmetry() {
 }
 
 // Test codec round-trip with level 1 compression
+// This test verifies that encoding and decoding with level 1 (CM-based compression)
+// produces correct round-trip results. Level 1 uses a simple order-1 context model.
 fn test_codec_roundtrip_level1() {
-// Test a simple round-trip through encoder/decoder
-original := 'Hello World!'
-
-// Create output buffer
-mut output := FileWriter.new()
-
-// Create ZPAQL with level 1 header
-level := get_compression_level(1)
-mut z := ZPAQL.new()
-z.header = level.hcomp.clone()
-
-// Parse header to find cend, hbegin, hend
-mut pos := 5
-if z.header.len >= 5 {
-n := int(z.header[4])
-for i := 0; i < n && pos < z.header.len; i++ {
-ctype := int(z.header[pos])
-if ctype < 0 || ctype >= compsize.len {
-break
+	// Test a simple round-trip through encoder/decoder
+	original := 'Hello World!'
+	
+	// Create output buffer
+	mut output := FileWriter.new()
+	
+	// Create ZPAQL with level 1 header
+	level := get_compression_level(1)
+	mut z := ZPAQL.new()
+	z.header = level.hcomp.clone()
+	
+	// Parse header to find cend, hbegin, hend
+	// This duplicates the parsing logic from compressor/decompressor - in production
+	// code this should be extracted to a shared function, but for testing isolation
+	// we keep it inline to avoid dependencies.
+	mut pos := 5
+	if z.header.len >= 5 {
+		n := int(z.header[4])
+		for i := 0; i < n && pos < z.header.len; i++ {
+			ctype := int(z.header[pos])
+			if ctype < 0 || ctype >= compsize.len {
+				break
 }
 pos += compsize[ctype]
 }
