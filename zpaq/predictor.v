@@ -2,6 +2,10 @@
 // Ported from libzpaq by Matt Mahoney, public domain
 module zpaq
 
+// Initial CM probability - 50% probability (16384 out of 32767)
+// Stored in upper 16 bits for CM table format
+const initial_cm_probability = u32(16384) << 16
+
 // Squash table: convert stretch output to probability
 // squash(d) = 1/(1+exp(-d/64)) * 32768, clamped to [1, 32767]
 const squash_table = init_squash_table()
@@ -280,9 +284,8 @@ pub fn (mut pred Predictor) init(mut z ZPAQL) {
 				size := 1 << pred.comp[i].a
 				pred.comp[i].cm = []u32{len: size}
 				// Initialize with 50% probability (stored in upper 16 bits)
-				// Probability 16384 (50%) scaled to upper 16 bits = 16384 << 16 = 0x40000000
 				for j := 0; j < size; j++ {
-					pred.comp[i].cm[j] = u32(16384) << 16 // 50% probability in upper 16 bits
+					pred.comp[i].cm[j] = initial_cm_probability
 				}
 				cp += compsize[2]
 			}

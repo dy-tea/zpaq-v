@@ -172,6 +172,10 @@ pub fn (mut d Decompresser) find_block() bool {
 					break
 				}
 				ctype := int(d.z.header[pos])
+				// Bounds check for ctype before accessing compsize array
+				if ctype < 0 || ctype >= compsize.len {
+					break
+				}
 				pos += compsize[ctype]
 			}
 			// pos now points to the 0 byte that ends component definitions

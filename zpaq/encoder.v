@@ -2,6 +2,10 @@
 // Ported from libzpaq by Matt Mahoney, public domain
 module zpaq
 
+// Probability for EOF/data bit - low value means EOF is rare
+// 256/65536 ≈ 0.4% probability of EOF, makes encoding data bytes cheap
+const eof_probability = 256
+
 // Encoder implements arithmetic encoding with optional prediction
 pub struct Encoder {
 pub mut:
@@ -82,16 +86,14 @@ pub fn (mut e Encoder) compress(c int) {
 	// First encode EOF/data bit
 	// y=1 means EOF, y=0 means data follows
 	// Use small probability for EOF so data bytes are cheap to encode
-	// p=256 means P(EOF)=256/65536≈0.4%, P(data)≈99.6%
-	// This makes encoding data bytes very cheap (~0.006 bits overhead per byte)
 	if c == -1 {
 		// EOF marker (expensive)
-		e.encode(1, 256)
+		e.encode(1, eof_probability)
 		return
 	}
 
 	// Data byte follows (cheap)
-	e.encode(0, 256)
+	e.encode(0, eof_probability)
 
 	// Encode each bit MSB first
 	for i := 7; i >= 0; i-- {

@@ -100,6 +100,10 @@ pub fn (mut c Compressor) start_block(level int) {
 				break
 			}
 			ctype := int(c.z.header[pos])
+			// Bounds check for ctype before accessing compsize array
+			if ctype < 0 || ctype >= compsize.len {
+				break
+			}
 			pos += compsize[ctype]
 		}
 		// pos now points to the 0 byte that ends component definitions
