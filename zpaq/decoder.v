@@ -144,10 +144,50 @@ pub fn (mut d Decoder) decompress() int {
 	return int(c) - 256
 }
 
-// Skip n bytes without decoding
+// Skip to end of segment after decompression
+// For compressed mode: reads until 4 consecutive zeros found, then returns next byte
+// This byte should be the segment end marker (253 or 254)
+// Matches libzpaq's Decoder::skip() function
 pub fn (mut d Decoder) skip() int {
-	// Read one byte from input
-	return d.get()
+	if d.pr == unsafe { nil } || !d.pr.is_modeled() {
+		// Store mode: different logic (handled in decompressor)
+		return d.get()
+	}
+
+	// Compressed mode: find 4 consecutive zeros
+	// The decoder's "code" value has been reading ahead, so we need to
+	// read from input until we see 4 zeros, then return the byte after
+	mut curr := d.code // current 4-byte window
+
+	// If at start (curr == 0), read first byte
+	for curr == 0 {
+		c := d.get()
+		if c < 0 {
+			return -1
+		}
+		curr = u32(c)
+	}
+
+	// Read until we find 4 consecutive zeros
+	mut c := 0
+	for curr != 0 {
+		c = d.get()
+		if c < 0 {
+			return -1
+		}
+		curr = (curr << 8) | u32(c)
+	}
+
+	// Skip any additional zeros (there might be more than 4)
+	for {
+		c = d.get()
+		if c != 0 {
+			break
+		}
+	}
+
+	// Return the first non-zero byte (segment end marker)
+	return c
 }
 
 // Get current low value

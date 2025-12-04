@@ -481,7 +481,16 @@ pub fn (mut d Decompresser) read_segment_end() {
 
 	// Read segment end marker
 	// Format: 253 + 20 bytes SHA1, or 254 (no checksum)
-	marker := d.input.get()
+	mut marker := 0
+
+	// For compressed mode, use decoder's skip() to find the marker
+	// The skip() function reads until 4 consecutive zeros then returns next byte
+	if d.pr.is_modeled() {
+		marker = d.dec.skip()
+	} else {
+		// Store mode: marker is read directly from input
+		marker = d.input.get()
+	}
 
 	if marker == 253 {
 		// Read SHA1 hash (20 bytes)
