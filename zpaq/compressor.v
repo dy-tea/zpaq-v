@@ -7,26 +7,26 @@ const comp_state_block = 0 // in block
 const comp_state_segment = 1 // in segment
 const comp_state_start = 2 // at start
 
-// ZPAQ block locator tag (magic bytes 'zPQ')
-const zpaq_block_tag = [u8(0x7A), 0x50, 0x51]
-
-// ZPAQ segment locator tag
-const zpaq_segment_tag = [u8(0x01)]
+// ZPAQ block locator magic bytes (13-byte pattern that produces correct rolling hash)
+// This pattern when followed by 'zPQ' produces the rolling hashes expected by libzpaq
+const zpaq_block_locator = [u8(0x37), 0x6b, 0x53, 0x74, 0xa0, 0x31, 0x83, 0xd3, 0x8c, 0xb2, 0x28,
+	0xb0, 0xd3]
 
 // Compressor provides high-level ZPAQ compression
 pub struct Compressor {
 mut:
-	state      int       // current state
-	z          ZPAQL     // ZPAQL VM for HCOMP
-	pz         ZPAQL     // ZPAQL VM for PCOMP
-	enc        Encoder   // arithmetic encoder
-	pr         Predictor // prediction model
-	input      &Reader = unsafe { nil }
-	output     &Writer = unsafe { nil }
-	sha1       SHA1 // SHA1 hash of original uncompressed data for integrity verification
-	level      int  // compression level (0-5)
-	store_buf  []u8 // buffer for store mode
-	store_size u32  // bytes in store buffer
+	state        int       // current state
+	z            ZPAQL     // ZPAQL VM for HCOMP
+	pz           ZPAQL     // ZPAQL VM for PCOMP
+	enc          Encoder   // arithmetic encoder
+	pr           Predictor // prediction model
+	input        &Reader = unsafe { nil }
+	output       &Writer = unsafe { nil }
+	sha1         SHA1 // SHA1 hash of original uncompressed data for integrity verification
+	level        int  // compression level (0-5)
+	store_buf    []u8 // buffer for store mode
+	store_size   u32  // bytes in store buffer
+	first_byte   bool // true if this is first byte of segment (need to write PP mode)
 }
 
 // Create a new compressor
@@ -41,6 +41,7 @@ pub fn Compressor.new() Compressor {
 		level:      1
 		store_buf:  []u8{cap: 65536}
 		store_size: 0
+		first_byte: true
 	}
 }
 
@@ -58,19 +59,19 @@ pub fn (mut c Compressor) set_output(w &Writer) {
 	}
 }
 
-// Write a 4-byte locator tag for block/segment detection
-fn (mut c Compressor) write_locator_tag(tag []u8) {
+// Write the block locator pattern (13 magic bytes + 'zPQ')
+fn (mut c Compressor) write_block_locator() {
 	if c.output == unsafe { nil } {
 		return
 	}
-	// Write the 13-byte locator tag pattern
-	// Tag consists of: 7 bytes of 0x00, followed by the tag bytes
-	for _ in 0 .. 7 {
-		c.output.put(0x00)
-	}
-	for b in tag {
+	// Write the 13-byte magic pattern that produces correct rolling hashes
+	for b in zpaq_block_locator {
 		c.output.put(int(b))
 	}
+	// Write 'zPQ'
+	c.output.put(0x7a) // 'z'
+	c.output.put(0x50) // 'P'
+	c.output.put(0x51) // 'Q'
 }
 
 // Start a new compression block with preset level
@@ -90,7 +91,8 @@ pub fn (mut c Compressor) start_block(level int) {
 	c.z.header = config.hcomp.clone()
 
 	// Parse header to find cend, hbegin, hend
-	// Header format: hm hh ph pm n [comp1]...[compN] 0 [HCOMP code] 0 [PCOMP code] 0
+	// Our header format: hm hh ph pm n [comp1]...[compN] 0 [HCOMP code] 0
+	// Note: This is the raw content format without size prefix
 	if c.z.header.len >= 5 {
 		n := int(c.z.header[4])
 		mut pos := 5
@@ -146,20 +148,59 @@ pub fn (mut c Compressor) start_block(level int) {
 	c.z.initp()
 
 	if c.output != unsafe { nil } {
-		// Write block locator tag: 7 zeros + 'zPQ'
-		c.write_locator_tag(zpaq_block_tag)
+		// Write 13-byte block locator magic + "zPQ" (compatible with libzpaq)
+		c.write_block_locator()
 
-		// Write block type (1 = compressed)
+		// Determine level byte:
+		// Level 1: has at least 1 component (z.header[4] != 0)
+		// Level 2: no components (z.header[4] == 0)
+		zpaq_level := if c.z.header.len >= 5 && c.z.header[4] != 0 { 1 } else { 2 }
+		c.output.put(zpaq_level)
+
+		// Write block type (1 = compressed block)
 		c.output.put(1)
 
-		// Write HCOMP header size (2 bytes, little-endian)
-		hlen := c.z.header.len
-		c.output.put(hlen & 0xFF)
-		c.output.put((hlen >> 8) & 0xFF)
+		// Compute and write ZPAQL header size
+		// File format: hsize(2) + COMP section + HCOMP section
+		// COMP section: hm hh ph pm n [components] 0 (our header[0..cend])
+		// HCOMP section: [HCOMP code] 0 (our header[hbegin..hend])
+		//
+		// libzpaq formula: hsize = (cend - 2) + (hend - hbegin)
+		// where cend includes 2 size bytes at the start of libzpaq's header array
+		// Since our header doesn't have size bytes, we need:
+		// COMP content = header[0..cend] = cend + 1 bytes (includes terminator at cend)
+		// HCOMP content = header[hbegin..hend] = hend - hbegin + 1 bytes (includes terminator at hend)
+		// hsize = COMP content + HCOMP content = (cend + 1) + (hend - hbegin + 1) = cend + hend - hbegin + 2
+		//
+		// But libzpaq's formula adjusts for their 2-byte size prefix in header array
+		// Their assertion: hsize == (cend - 2) + (hend - hbegin)
+		// This means the hsize value doesn't count the 2 size bytes
+		// hsize = (COMP content without size bytes) + (HCOMP content)
+		// = (cend + 1) + (hend - hbegin + 1) but we already include terminators
+		//
+		// Actually, the file format written by z.write() is:
+		// - header[0..cend-1] which includes size bytes at 0-1
+		// - header[hbegin..hend-1] which is HCOMP
+		// So written bytes = cend + (hend - hbegin)
+		// hsize = (cend - 2) + (hend - hbegin) = written bytes - 2
+		//
+		// For our header (no size bytes):
+		// We write: header[0..cend] + header[hbegin..hend]
+		// = (cend + 1) + (hend - hbegin + 1) = cend + hend - hbegin + 2 bytes
+		// hsize should equal this minus 2 = cend + hend - hbegin
+		hsize := c.z.cend + c.z.hend - c.z.hbegin + 2
 
-		// Write HCOMP header
-		for b in c.z.header {
-			c.output.put(int(b))
+		c.output.put(hsize & 0xFF)
+		c.output.put((hsize >> 8) & 0xFF)
+
+		// Write COMP section: hm hh ph pm n [components] 0
+		for i := 0; i <= c.z.cend && i < c.z.header.len; i++ {
+			c.output.put(int(c.z.header[i]))
+		}
+
+		// Write HCOMP section: [HCOMP code] 0
+		for i := c.z.hbegin; i <= c.z.hend && i < c.z.header.len; i++ {
+			c.output.put(int(c.z.header[i]))
 		}
 	}
 
@@ -198,8 +239,8 @@ pub fn (mut c Compressor) start_segment(filename string, comment string) {
 	}
 
 	if c.output != unsafe { nil } {
-		// Write segment locator tag
-		c.write_locator_tag(zpaq_segment_tag)
+		// Write segment marker (0x01)
+		c.output.put(1)
 
 		// Write filename (null-terminated)
 		for b in filename.bytes() {
@@ -231,6 +272,9 @@ pub fn (mut c Compressor) start_segment(filename string, comment string) {
 	c.store_buf.clear()
 	c.store_size = 0
 
+	// Mark that we need to write post-processing mode
+	c.first_byte = true
+
 	c.state = comp_state_segment
 }
 
@@ -244,6 +288,13 @@ pub fn (mut c Compressor) compress(n int) bool {
 	// Level 0 = store (no compression)
 	if c.level == 0 {
 		return c.compress_store(n)
+	}
+
+	// Write post-processing mode (0 = PASS) at start of first segment data
+	// This is required by libzpaq format
+	if c.first_byte {
+		c.enc.compress(0) // 0 = PASS (no post-processing)
+		c.first_byte = false
 	}
 
 	mut count := 0
@@ -341,9 +392,13 @@ pub fn (mut c Compressor) end_segment() {
 			c.enc.compress(-1)
 
 			// Flush encoder (writes remaining state bytes)
-			// The flush provides proper termination - no additional end marker needed
-			// since the decoder detects EOF through the encoded EOF marker
 			c.enc.flush()
+
+			// Write 4 zero bytes after encoder flush (required by libzpaq format)
+			c.output.put(0)
+			c.output.put(0)
+			c.output.put(0)
+			c.output.put(0)
 		}
 
 		// Compute SHA1 hash

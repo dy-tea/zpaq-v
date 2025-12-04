@@ -46,55 +46,46 @@ fn level_0_store() CompressionLevel {
 	}
 }
 
-// Level 1: Fast compression
-// Order-1 ICM context model with ISSE refinement
-// Uses ICM for indirect context modeling which is more effective than CM
-// for order-1 contexts. ICM uses a state table for probability estimation.
+// Level 1: Fast compression - matches libzpaq model 1 (min.cfg)
+// ICM + ISSE with order-2 context model
 fn level_1_fast() CompressionLevel {
 	return CompressionLevel{
 		name: 'fast'
-		// Header: hm hh ph pm n [components] 0 [HCOMP code] halt 0 0
+		// This matches libzpaq's model 1 exactly for compatibility
+		// Header format: hm hh ph pm n [components] 0 [HCOMP code] 0
 		hcomp: [
-			u8(16), // hm = 64KB M array
-			9, // hh = 512 words H array (for context tracking)
+			u8(2), // hm = 4 bytes M array
+			1, // hh = 2 words H array
 			0, // ph = 0 (no PCOMP)
 			0, // pm = 0
 			2, // n = 2 components (ICM + ISSE)
 			// Component 0: ICM (indirect context model)
-			// Format: type sizebits
 			3, // type = ICM
-			16, // size bits (64K hash table)
-			// Component 1: ISSE (improves ICM predictions)
-			// Format: type sizebits j
-			8, // type = ISSE
 			16, // size bits
+			// Component 1: ISSE (improves ICM predictions)
+			8, // type = ISSE
+			19, // size bits
 			0, // j = uses component 0's prediction
 			0, // end of component definitions
-			// HCOMP code: b=c c-- *c=a d=0 hash *d=a d++ *d=a halt
-			// b=c : copy C to B (B will read from previous bytes stored at M[B])
-			// c-- : move write position backward in circular buffer
-			// *c=a : store current byte at M[C]
-			// d=0 : D = 0
-			// hash : A = (A + M[B] + 512) * 773 (hash with previous byte)
-			// *d=a : H[0] = A (order-1 context for component 0)
-			// d++ : D = 1
-			// *d=a : H[1] = A (same context for component 1)
-			// halt : stop
-			74, // b=c (opcode 74 = B = C)
-			18, // c-- (opcode 18 = C--)
-			104, // *c=a (opcode 104 = M[C] = A)
-			95,
-			0, // d=0 (opcode 95 with operand 0)
-			59, // hash (opcode 59 = HASH)
-			112, // *d=a (opcode 112 = H[D] = A)
-			25, // d++ (opcode 25 = D++)
-			112, // *d=a (opcode 112 = H[D] = A)
-			56, // halt (opcode 56)
+			// HCOMP code: *b=a a=0 d=0 hash b-- hash *d=a d++ b-- hash b-- hash *d=a halt
+			96, // *b=a
+			4, // a=0
+			28, // d=0
+			59, // hash
+			10, // b--
+			59, // hash
+			112, // *d=a
+			25, // d++
+			10, // b--
+			59, // hash
+			10, // b--
+			59, // hash
+			112, // *d=a
+			56, // halt
 			0, // end of HCOMP
-			0, // end of PCOMP
 		]
-		hh:    9
-		hm:    16
+		hh: 1
+		hm: 2
 	}
 }
 
