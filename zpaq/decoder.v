@@ -67,15 +67,16 @@ pub fn (d &Decoder) buffered() bool {
 }
 
 // Decode a bit given probability (libzpaq compatible)
-// p is probability of 1 in range (1..65535)
+// p is probability of 1 in range (0..65535)
+// libzpaq uses p=0 for EOF marker decoding
 pub fn (mut d Decoder) decode(p int) int {
-	// Clamp probability
+	// Clamp probability - allow 0 for EOF bit
 	mut pr := p
-	if pr < 1 {
-		pr = 1
+	if pr < 0 {
+		pr = 0
 	}
-	if pr > 65534 {
-		pr = 65534
+	if pr > 65535 {
+		pr = 65535
 	}
 
 	// Split range based on probability

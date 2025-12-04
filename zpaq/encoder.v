@@ -2,9 +2,9 @@
 // Ported from libzpaq by Matt Mahoney, public domain
 module zpaq
 
-// Probability for EOF/data bit - low value means EOF is rare
-// 256/65536 ≈ 0.4% probability of EOF, makes encoding data bytes cheap
-const eof_probability = 256
+// Probability for EOF/data bit - libzpaq uses 0 for this
+// p=0 means encode(1, 0) outputs bit 1 with probability 0
+const eof_probability = 0
 
 // Encoder implements arithmetic encoding with optional prediction
 pub struct Encoder {
@@ -41,16 +41,17 @@ pub fn (mut e Encoder) set_output(mut output Writer) {
 }
 
 // Encode a bit with given probability (libzpaq compatible)
-// p is probability of 1 in range (1..65535)
+// p is probability of 1 in range (0..65535)
 // Uses 32-bit arithmetic with proper range scaling
 pub fn (mut e Encoder) encode(y int, p int) {
-	// Clamp probability to valid range (1..65534)
+	// Clamp probability to valid range (0..65535)
+	// libzpaq allows p=0 for EOF marker encoding
 	mut pr := p
-	if pr < 1 {
-		pr = 1
+	if pr < 0 {
+		pr = 0
 	}
-	if pr > 65534 {
-		pr = 65534
+	if pr > 65535 {
+		pr = 65535
 	}
 
 	// Split range based on probability
