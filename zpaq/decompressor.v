@@ -444,7 +444,8 @@ fn (mut d Decompresser) decompress_store(n int) bool {
 				// pp_mode == 1 would mean PCOMP program follows (not supported in store mode)
 				d.first_seg = false
 				
-				// If chunk only contained PP mode byte, need to get next chunk
+				// If the current chunk is exhausted after reading PP mode byte, 
+				// continue to read the next chunk length
 				if d.store_count == 0 {
 					continue
 				}

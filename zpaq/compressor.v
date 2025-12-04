@@ -377,8 +377,8 @@ pub fn (mut c Compressor) end_segment() {
 			// Flush encoder (writes remaining state bytes)
 			c.enc.flush()
 
-			// Note: No 4-zero-byte terminator for compressed mode
-			// The encoder's flush() outputs the final state bytes
+			// Note: No 4-zero-byte terminator for compressed mode (only needed for 
+			// store mode). The encoder's flush() outputs the final state bytes.
 		}
 
 		// Compute SHA1 hash
