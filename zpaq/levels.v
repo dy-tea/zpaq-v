@@ -47,8 +47,9 @@ fn level_0_store() CompressionLevel {
 }
 
 // Level 1: Fast compression
-// Simple order-1 CM with 256 entries using libzpaq-style HCOMP
-// HCOMP: c-- *c=a a+=255 d=a *d=c d=0 hash *d=a halt
+// Order-1 ICM context model with ISSE refinement
+// Uses ICM for indirect context modeling which is more effective than CM
+// for order-1 contexts. ICM uses a state table for probability estimation.
 fn level_1_fast() CompressionLevel {
 	return CompressionLevel{
 		name: 'fast'
@@ -58,17 +59,36 @@ fn level_1_fast() CompressionLevel {
 			9, // hh = 512 words H array (for context tracking)
 			0, // ph = 0 (no PCOMP)
 			0, // pm = 0
-			1, // n = 1 component
-			// Component 0: CM with order-1 context
-			// Format: type sizebits limit
-			2, // type = CM
-			16, // size bits (64K entries)
-			4, // limit (learning rate)
+			2, // n = 2 components (ICM + ISSE)
+			// Component 0: ICM (indirect context model)
+			// Format: type sizebits
+			3, // type = ICM
+			16, // size bits (64K hash table)
+			// Component 1: ISSE (improves ICM predictions)
+			// Format: type sizebits j
+			8, // type = ISSE
+			16, // size bits
+			0, // j = uses component 0's prediction
 			0, // end of component definitions
-			// HCOMP code: d=0 *d=a halt (store input byte as context for component 0)
-			95, 0, // d=0
-			112, // *d=a (H[0] = input_byte)
-			56, // halt
+			// HCOMP code: b=c c-- *c=a d=0 hash *d=a d++ *d=a halt
+			// b=c : copy C to B (B will read from previous bytes stored at M[B])
+			// c-- : decrement C (ring buffer pointer)
+			// *c=a : store current byte at M[C]
+			// d=0 : D = 0
+			// hash : A = (A + M[B] + 512) * 773 (hash with previous byte)
+			// *d=a : H[0] = A (order-1 context for component 0)
+			// d++ : D = 1
+			// *d=a : H[1] = A (same context for component 1)
+			// halt : stop
+			74, // b=c (opcode 74 = B = C)
+			18, // c-- (opcode 18 = C--)
+			104, // *c=a (opcode 104 = M[C] = A)
+			95, 0, // d=0 (opcode 95 with operand 0)
+			59, // hash (opcode 59 = HASH)
+			112, // *d=a (opcode 112 = H[D] = A)
+			25, // d++ (opcode 25 = D++)
+			112, // *d=a (opcode 112 = H[D] = A)
+			56, // halt (opcode 56)
 			0, // end of HCOMP
 			0, // end of PCOMP
 		]
@@ -78,7 +98,7 @@ fn level_1_fast() CompressionLevel {
 }
 
 // Level 2: Normal compression
-// Order-1 ICM + order-2,3 ISSE chain with proper context hashing
+// Order-1,2,3 context chain using ICM + ISSE with proper history tracking
 fn level_2_normal() CompressionLevel {
 	return CompressionLevel{
 		name: 'normal'
@@ -103,17 +123,22 @@ fn level_2_normal() CompressionLevel {
 			16, // size bits
 			1, // j = input from component 1
 			0, // end of component definitions
-			// HCOMP code: build context chain using HASH
-			// d=0 *d=0 hash *d=a d++ hash *d=a d++ hash *d=a halt
+			// HCOMP code: b=c c-- *c=a d=0 hash *d=a d++ hash *d=a d++ hash *d=a halt
+			// b=c : B points to previous bytes in M
+			// c-- : advance ring buffer pointer
+			// *c=a : store current byte in M[C]
+			// Then build context chain with repeated HASH operations
+			74, // b=c
+			18, // c--
+			104, // *c=a
 			95, 0, // d=0
-			119, 0, // *d=0
-			59, // hash
+			59, // hash (order 1)
 			112, // *d=a
 			25, // d++
-			59, // hash
+			59, // hash (order 2)
 			112, // *d=a
 			25, // d++
-			59, // hash
+			59, // hash (order 3)
 			112, // *d=a
 			56, // halt
 			0, // end of HCOMP
@@ -125,7 +150,7 @@ fn level_2_normal() CompressionLevel {
 }
 
 // Level 3: High compression
-// Longer ISSE chain with more contexts
+// Longer ISSE chain with order-1 through order-5 contexts
 fn level_3_high() CompressionLevel {
 	return CompressionLevel{
 		name: 'high'
@@ -157,9 +182,11 @@ fn level_3_high() CompressionLevel {
 			18, // size bits
 			3, // j = input from component 3
 			0, // end of components
-			// HCOMP: order-1 through order-5 context chain
+			// HCOMP: b=c c-- *c=a d=0 hash *d=a d++ hash *d=a ...
+			74, // b=c
+			18, // c--
+			104, // *c=a
 			95, 0, // d=0
-			119, 0, // *d=0
 			59, // hash (order 1)
 			112, // *d=a
 			25, // d++
@@ -184,7 +211,7 @@ fn level_3_high() CompressionLevel {
 }
 
 // Level 4: Maximum compression
-// Full model with deeper context chain
+// Deeper ICM+ISSE chain with MIX2 combination
 fn level_4_max() CompressionLevel {
 	return CompressionLevel{
 		name: 'max'
@@ -214,9 +241,11 @@ fn level_4_max() CompressionLevel {
 			24, // rate
 			255, // mask
 			0, // end of components
-			// HCOMP: order-1 through order-7 context chain
+			// HCOMP: b=c c-- *c=a d=0 hash *d=a d++ hash *d=a ...
+			74, // b=c
+			18, // c--
+			104, // *c=a
 			95, 0, // d=0
-			119, 0, // *d=0
 			59, 112, 25, // hash, *d=a, d++
 			59, 112, 25, // hash, *d=a, d++
 			59, 112, 25, // hash, *d=a, d++
@@ -266,9 +295,11 @@ fn level_5_max() CompressionLevel {
 			24, // rate
 			255, // mask
 			0, // end of components
-			// HCOMP: order-1 through order-9 context chain
+			// HCOMP: b=c c-- *c=a d=0 hash *d=a d++ hash *d=a ...
+			74, // b=c
+			18, // c--
+			104, // *c=a
 			95, 0, // d=0
-			119, 0, // *d=0
 			59, 112, 25, // hash, *d=a, d++
 			59, 112, 25, // hash, *d=a, d++
 			59, 112, 25, // hash, *d=a, d++
