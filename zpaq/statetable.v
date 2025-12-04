@@ -91,11 +91,11 @@ pub fn (st &StateTable) cminit(state int) int {
 		return 1 << 22 // 50% probability: (1<<23)/2 = 1<<22
 	}
 	// Get counts from state table
-	n0 := int(st.ns[state * 4 + 2])
-	n1 := int(st.ns[state * 4 + 3])
+	n0 := u32(st.ns[state * 4 + 2])
+	n1 := u32(st.ns[state * 4 + 3])
 
 	// Probability of 1 * 2^23 = ((n1*2+1) << 22) / (n0 + n1 + 1)
-	return ((n1 * 2 + 1) << 22) / (n0 + n1 + 1)
+	return int(((n1 * 2 + 1) << 22) / (n0 + n1 + 1))
 }
 
 // Get count of 0 bits in state

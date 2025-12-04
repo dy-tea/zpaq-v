@@ -123,17 +123,17 @@ pub fn (mut d Decoder) decompress() int {
 	}
 
 	// Decode 8 bits using predictor
-	mut c := 1
+	mut c := u32(1)
 	for c < 256 {
 		p := d.pr.predict()
 		// Scale: p * 65536 / 32768 = p * 2
 		scaled_p := p * 2 + 1 // +1 to match libzpaq's p*2+1
 		y := d.decode(scaled_p)
 		d.pr.update(y)
-		c = (c << 1) | y
+		c = (c << 1) | u32(y)
 	}
 
-	return c - 256
+	return int(c) - 256
 }
 
 // Skip n bytes without decoding

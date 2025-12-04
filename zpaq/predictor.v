@@ -458,7 +458,7 @@ pub fn (mut pred Predictor) init(z &ZPAQL) {
 				start := int(z.header[cp + 3])
 				for k := 0; k < size * 32; k++ {
 					q := (k & 31) * 64 - 992
-					pred.comp[i].cm[k] = u32(squash(q) << 17) | u32(start)
+					pred.comp[i].cm[k] = (u32(squash(q)) << 17) | u32(start)
 				}
 				cp += compsize[9]
 			}
@@ -493,7 +493,7 @@ pub fn (pred &Predictor) is_modeled() bool {
 
 // Find context in hash table, returning row index
 fn (mut pred Predictor) find_ht(mut ht []u8, sizebits int, cxt u32) int {
-	size := 1 << sizebits
+	_ := 1 << sizebits // size not used but kept for clarity
 	chk := int((cxt >> sizebits) & 255)
 	h0 := int((cxt * 16) & u32(ht.len - 16))
 
@@ -712,7 +712,7 @@ pub fn (mut pred Predictor) update(y int) {
 					cr.a = 0 // mismatch
 				}
 				idx := cr.limit & (cr.ht.len - 1)
-				cr.ht[idx] = u8((int(cr.ht[idx]) << 1) | y)
+				cr.ht[idx] = u8((u32(cr.ht[idx]) << 1) | u32(y))
 				cr.cxt++
 				if cr.cxt >= 8 {
 					cr.cxt = 0
