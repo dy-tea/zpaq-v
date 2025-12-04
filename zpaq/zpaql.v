@@ -70,22 +70,24 @@ pub fn (mut z ZPAQL) clear() {
 }
 
 // Initialize H array based on header
+// Header format matches libzpaq: hh hm ph pm n [components] 0 [HCOMP code] 0
 pub fn (mut z ZPAQL) inith() {
 	if z.header.len < 2 {
 		return
 	}
-	hh := int(z.header[1]) // H size
+	hh := int(z.header[0]) // H size (first byte in libzpaq format)
 	if hh > 0 && hh < 32 {
 		z.h = []u32{len: 1 << hh}
 	}
 }
 
 // Initialize M array and program counter
+// Header format matches libzpaq: hh hm ph pm n [components] 0 [HCOMP code] 0
 pub fn (mut z ZPAQL) initp() {
-	if z.header.len < 1 {
+	if z.header.len < 2 {
 		return
 	}
-	hm := int(z.header[0]) // M size
+	hm := int(z.header[1]) // M size (second byte in libzpaq format)
 	if hm > 0 && hm < 32 {
 		z.m = []u8{len: 1 << hm}
 	}

@@ -67,15 +67,17 @@ pub fn (d &Decoder) buffered() bool {
 }
 
 // Decode a bit given probability (libzpaq compatible)
-// p is probability of 1 in range (1..65535)
+// p is probability of 1 in range (0..65535), where p/65536 is the actual probability
+// Special case: p=0 is used for EOF marker decoding - this effectively makes
+// y=1 very unlikely (probability 0), which is correct for detecting EOF markers
 pub fn (mut d Decoder) decode(p int) int {
-	// Clamp probability
+	// Clamp probability - allow 0 for EOF bit
 	mut pr := p
-	if pr < 1 {
-		pr = 1
+	if pr < 0 {
+		pr = 0
 	}
-	if pr > 65534 {
-		pr = 65534
+	if pr > 65535 {
+		pr = 65535
 	}
 
 	// Split range based on probability
@@ -98,6 +100,12 @@ pub fn (mut d Decoder) decode(p int) int {
 	for (d.high ^ d.low) < 0x1000000 {
 		d.low <<= 8
 		d.high = (d.high << 8) | 0xFF
+		// Prevent decoding issues with 4 zero bytes (libzpaq compatibility)
+		// When low becomes 0, set it to 1 to maintain valid range coding
+		// This matches libzpaq: low+=(low==0)
+		if d.low == 0 {
+			d.low = 1
+		}
 		c := d.get()
 		if c < 0 {
 			d.code = (d.code << 8)
@@ -123,23 +131,68 @@ pub fn (mut d Decoder) decompress() int {
 	}
 
 	// Decode 8 bits using predictor
-	mut c := 1
+	mut c := u32(1)
 	for c < 256 {
 		p := d.pr.predict()
 		// Scale: p * 65536 / 32768 = p * 2
 		scaled_p := p * 2 + 1 // +1 to match libzpaq's p*2+1
 		y := d.decode(scaled_p)
 		d.pr.update(y)
-		c = (c << 1) | y
+		c = (c << 1) | u32(y)
 	}
 
-	return c - 256
+	return int(c) - 256
 }
 
-// Skip n bytes without decoding
+// Skip to end of segment after decompression
+// For compressed mode: reads until 4 consecutive zeros found, then returns next byte
+// This byte should be the segment end marker (253 or 254)
+// Matches libzpaq's Decoder::skip() function
 pub fn (mut d Decoder) skip() int {
-	// Read one byte from input
-	return d.get()
+	if d.pr == unsafe { nil } || !d.pr.is_modeled() {
+		// Store mode: different logic (handled in decompressor)
+		return d.get()
+	}
+
+	// Compressed mode: find 4 consecutive zeros
+	// The decoder's "code" value has been reading ahead, so we need to
+	// read from input until we see 4 zeros, then return the byte after
+	mut curr := d.code // current 4-byte window
+
+	// If at start (curr == 0), read first byte to initialize the window
+	// This handles the edge case where we start at an empty state
+	if curr == 0 {
+		c := d.get()
+		if c < 0 {
+			return -1 // EOF
+		}
+		curr = u32(c)
+	}
+
+	// Read until we find 4 consecutive zeros (curr == 0)
+	mut c := 0
+	for curr != 0 {
+		c = d.get()
+		if c < 0 {
+			return -1 // EOF - stream ended without finding 4 zeros
+		}
+		curr = (curr << 8) | u32(c)
+	}
+
+	// Skip any additional zeros (there might be more than 4)
+	// and return the first non-zero byte (segment end marker)
+	for {
+		c = d.get()
+		if c < 0 {
+			return -1 // EOF - stream ended without finding segment marker
+		}
+		if c != 0 {
+			break
+		}
+	}
+
+	// Return the segment end marker (should be 253 or 254)
+	return c
 }
 
 // Get current low value

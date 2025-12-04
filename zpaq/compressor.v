@@ -91,7 +91,7 @@ pub fn (mut c Compressor) start_block(level int) {
 	c.z.header = config.hcomp.clone()
 
 	// Parse header to find cend, hbegin, hend
-	// Our header format: hm hh ph pm n [comp1]...[compN] 0 [HCOMP code] 0
+	// Header format matches libzpaq: hh hm ph pm n [comp1]...[compN] 0 [HCOMP code] 0
 	// Note: This is the raw content format without size prefix
 	if c.z.header.len >= 5 {
 		n := int(c.z.header[4])
@@ -377,8 +377,12 @@ pub fn (mut c Compressor) end_segment() {
 			// Flush encoder (writes remaining state bytes)
 			c.enc.flush()
 
-			// Note: No 4-zero-byte terminator for compressed mode (only needed for 
-			// store mode). The encoder's flush() outputs the final state bytes.
+			// Write 4 zero bytes after encoder flush (required by libzpaq format)
+			// This is written after the compressed data ends
+			c.output.put(0)
+			c.output.put(0)
+			c.output.put(0)
+			c.output.put(0)
 		}
 
 		// Compute SHA1 hash
