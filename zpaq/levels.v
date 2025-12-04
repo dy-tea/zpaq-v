@@ -40,11 +40,11 @@ pub fn get_compression_level(level int) CompressionLevel {
 fn level_0_store() CompressionLevel {
 	return CompressionLevel{
 		name: 'store'
-		// Header: hm=0 hh=0 ph=0 pm=0 n=0 0 0
+		// Header: hm=0 hh=0 ph=0 pm=0 n=0 + COMP terminator(0) + HCOMP terminator(0)
 		// This is the minimal header with no components and no HCOMP code
 		hcomp: [u8(0), 0, 0, 0, 0, 0, 0]
-		hh:   0
-		hm:   0
+		hh:   0 // log2(H array words) = 0, meaning 1 word
+		hm:   0 // log2(M array bytes) = 0, meaning 1 byte
 	}
 }
 
@@ -56,8 +56,8 @@ fn level_1_fast() CompressionLevel {
 		// This matches libzpaq's model 1 exactly for compatibility
 		// Header format: hm hh ph pm n [components] 0 [HCOMP code] 0
 		hcomp: [
-			u8(2), // hm = 4 bytes M array
-			1, // hh = 2 words H array
+			u8(2), // hm = log2(M array bytes) = 2, meaning 4 bytes
+			1, // hh = log2(H array words) = 1, meaning 2 words
 			0, // ph = 0 (no PCOMP)
 			0, // pm = 0
 			2, // n = 2 components (ICM + ISSE)
@@ -86,8 +86,8 @@ fn level_1_fast() CompressionLevel {
 			56, // halt
 			0, // end of HCOMP
 		]
-		hh: 1
-		hm: 2
+		hh: 1 // log2(H array words) = 1, meaning 2 words
+		hm: 2 // log2(M array bytes) = 2, meaning 4 bytes
 	}
 }
 

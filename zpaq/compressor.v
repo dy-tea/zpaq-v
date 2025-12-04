@@ -161,34 +161,10 @@ pub fn (mut c Compressor) start_block(level int) {
 		c.output.put(1)
 
 		// Compute and write ZPAQL header size
-		// File format: hsize(2) + COMP section + HCOMP section
-		// COMP section: hm hh ph pm n [components] 0 (our header[0..cend])
-		// HCOMP section: [HCOMP code] 0 (our header[hbegin..hend])
-		//
-		// libzpaq formula: hsize = (cend - 2) + (hend - hbegin)
-		// where cend includes 2 size bytes at the start of libzpaq's header array
-		// Since our header doesn't have size bytes, we need:
-		// COMP content = header[0..cend] = cend + 1 bytes (includes terminator at cend)
-		// HCOMP content = header[hbegin..hend] = hend - hbegin + 1 bytes (includes terminator at hend)
-		// hsize = COMP content + HCOMP content = (cend + 1) + (hend - hbegin + 1) = cend + hend - hbegin + 2
-		//
-		// But libzpaq's formula adjusts for their 2-byte size prefix in header array
-		// Their assertion: hsize == (cend - 2) + (hend - hbegin)
-		// This means the hsize value doesn't count the 2 size bytes
-		// hsize = (COMP content without size bytes) + (HCOMP content)
-		// = (cend + 1) + (hend - hbegin + 1) but we already include terminators
-		//
-		// Actually, the file format written by z.write() is:
-		// - header[0..cend-1] which includes size bytes at 0-1
-		// - header[hbegin..hend-1] which is HCOMP
-		// So written bytes = cend + (hend - hbegin)
-		// hsize = (cend - 2) + (hend - hbegin) = written bytes - 2
-		//
-		// For our header (no size bytes):
-		// We write: header[0..cend] + header[hbegin..hend]
-		// = (cend + 1) + (hend - hbegin + 1) = cend + hend - hbegin + 2 bytes
-		// hsize should equal this minus 2 = cend + hend - hbegin
-		hsize := c.z.cend + c.z.hend - c.z.hbegin + 2
+		// COMP section: hm hh ph pm n [components] 0 (bytes 0 to cend inclusive)
+		// HCOMP section: [HCOMP code] 0 (bytes hbegin to hend inclusive)
+		// hsize = total bytes in COMP + HCOMP sections
+		hsize := (c.z.cend + 1) + (c.z.hend - c.z.hbegin + 1)
 
 		c.output.put(hsize & 0xFF)
 		c.output.put((hsize >> 8) & 0xFF)
