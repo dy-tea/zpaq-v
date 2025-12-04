@@ -27,4 +27,7 @@ Thumbs.db
 # Test directories
 testdir/
 extracted/
+extracted_store/
 test_archive_*.zpaq
+test.zpaq
+test_store.zpaq
