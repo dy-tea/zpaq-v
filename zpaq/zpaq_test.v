@@ -390,8 +390,10 @@ fn test_compression_levels() {
 		config := get_compression_level(level)
 		assert config.name.len > 0, 'Level ${level} has no name'
 		if level == 0 {
-			// Store mode has no HCOMP
-			assert config.hcomp.len == 0, 'Level 0 should have empty hcomp'
+			// Store mode has minimal header for libzpaq compatibility
+			// Format: hm=0 hh=0 ph=0 pm=0 n=0 + COMP terminator + HCOMP terminator
+			assert config.hcomp.len == 7, 'Level 0 should have 7-byte header for libzpaq compatibility'
+			assert config.hcomp[4] == 0, 'Level 0 should have n=0 components'
 		} else {
 			// Compressed modes have HCOMP header
 			assert config.hcomp.len > 0, 'Level ${level} should have hcomp'

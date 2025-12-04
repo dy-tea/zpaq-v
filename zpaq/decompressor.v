@@ -109,122 +109,135 @@ pub fn (mut d Decompresser) set_output(w &Writer) {
 }
 
 // Find and read the next block header
+// Uses rolling hash detection compatible with libzpaq
 // Returns true if block found
 pub fn (mut d Decompresser) find_block() bool {
 	if d.input == unsafe { nil } {
 		return false
 	}
 
-	// Look for ZPAQ block marker: zPQ followed by version
+	// Rolling hashes initialized to detect 16-byte block header pattern
+	// (13-byte magic locator + "zPQ")
+	// These initial values and multipliers match libzpaq exactly
+	mut h1 := u32(0x3D49B113)
+	mut h2 := u32(0x29EB7F93)
+	mut h3 := u32(0x2614BE13)
+	mut h4 := u32(0x3828EB13)
+
+	// Target hash values after seeing the 16-byte header
+	target_h1 := u32(0xB16B88F1)
+	target_h2 := u32(0xFF5376F1)
+	target_h3 := u32(0x72AC5BF1)
+	target_h4 := u32(0x2F909AF1)
+
+	// Read bytes and compute rolling hashes
 	for {
 		c := d.input.get()
 		if c < 0 {
 			return false
 		}
-		if c != 0x7A {
-			continue
-		}
 
-		// Check for 'PQ'
-		c2 := d.input.get()
-		if c2 != 0x50 {
-			continue
-		}
+		h1 = h1 * 12 + u32(c)
+		h2 = h2 * 20 + u32(c)
+		h3 = h3 * 28 + u32(c)
+		h4 = h4 * 44 + u32(c)
 
-		c3 := d.input.get()
-		if c3 != 0x51 {
-			continue
+		// Check if we found the 16-byte header pattern
+		if h1 == target_h1 && h2 == target_h2 && h3 == target_h3 && h4 == target_h4 {
+			break
 		}
+	}
 
-		// Read version
-		version := d.input.get()
-		if version < 0 {
+	// Read level byte (1 or 2)
+	level := d.input.get()
+	if level < 0 || (level != 1 && level != 2) {
+		return false
+	}
+
+	// Read block type (must be 1)
+	block_type := d.input.get()
+	if block_type != 1 {
+		return false
+	}
+
+	// Read ZPAQL header using libzpaq format
+	// First 2 bytes are the header size
+	hsize_lo := d.input.get()
+	hsize_hi := d.input.get()
+	if hsize_lo < 0 || hsize_hi < 0 {
+		return false
+	}
+	hsize := hsize_lo + hsize_hi * 256
+
+	// Read COMP section: hm hh ph pm n [components] 0
+	d.z = ZPAQL.new()
+	d.z.header.clear()
+
+	// Read hm hh ph pm n (5 bytes)
+	for i := 0; i < 5; i++ {
+		b := d.input.get()
+		if b < 0 {
 			return false
 		}
+		d.z.header << u8(b)
+	}
 
-		// Read HCOMP header size (2 bytes, little-endian)
-		len_lo := d.input.get()
-		len_hi := d.input.get()
-		if len_lo < 0 || len_hi < 0 {
+	// Read component definitions
+	n := int(d.z.header[4])
+	for i := 0; i < n; i++ {
+		ctype := d.input.get()
+		if ctype < 0 || ctype >= compsize.len {
 			return false
 		}
-		hlen := len_lo | (len_hi << 8)
-
-		// Read HCOMP header bytes
-		d.z = ZPAQL.new()
-		d.z.header.clear()
-		for i := 0; i < hlen; i++ {
+		d.z.header << u8(ctype)
+		csize := compsize[ctype]
+		for j := 1; j < csize; j++ {
 			b := d.input.get()
 			if b < 0 {
 				return false
 			}
 			d.z.header << u8(b)
 		}
-
-		// Parse header to find cend, hbegin, hend
-		// Header format: hm hh ph pm n [comp1]...[compN] 0 [HCOMP code] 0 [PCOMP code] 0
-		if hlen >= 5 {
-			n := int(d.z.header[4])
-			mut pos := 5
-			// Skip component definitions
-			for i := 0; i < n && pos < hlen; i++ {
-				if pos >= hlen {
-					break
-				}
-				ctype := int(d.z.header[pos])
-				// Bounds check for ctype before accessing compsize array
-				if ctype < 0 || ctype >= compsize.len {
-					break
-				}
-				pos += compsize[ctype]
-			}
-			// pos now points to the 0 byte that ends component definitions
-			d.z.cend = pos
-			// hbegin is after the 0 that ends components
-			if pos < hlen && d.z.header[pos] == 0 {
-				pos++
-			}
-			d.z.hbegin = pos
-			// Find end of HCOMP code - need to parse opcodes and skip operands
-			// Opcode format: if (opcode & 7) == 7 and opcode > 0, it has a 1-byte operand
-			// Special case: LJ (opcode 63) has a 2-byte operand
-			for pos < hlen {
-				op := d.z.header[pos]
-				if op == 0 {
-					// 0 byte that's not an operand = end of HCOMP
-					break
-				}
-				pos++
-				// Check if this opcode has operands
-				if (op & 7) == 7 {
-					// This opcode has a 1-byte operand (skip it)
-					if op == 63 {
-						// LJ has 2-byte operand
-						pos += 2
-					} else {
-						pos += 1
-					}
-				}
-			}
-			d.z.hend = pos
-		} else {
-			d.z.cend = hlen
-			d.z.hbegin = hlen
-			d.z.hend = hlen
-		}
-
-		// Initialize arrays
-		d.z.inith()
-		d.z.initp()
-
-		// Initialize predictor
-		d.pr = Predictor.new()
-		d.pr.init(&d.z)
-
-		d.state = decomp_state_block
-		return true
 	}
-	return false // unreachable but required by V compiler
+
+	// Read COMP terminator (0)
+	comp_term := d.input.get()
+	if comp_term != 0 {
+		return false
+	}
+	d.z.header << 0
+	d.z.cend = d.z.header.len - 1 // points to the terminator
+
+	// HCOMP section starts here
+	d.z.hbegin = d.z.header.len
+
+	// Calculate how many bytes of HCOMP to read
+	// hsize = COMP content (excluding size bytes) + HCOMP content
+	// COMP content = 5 (hm hh ph pm n) + component bytes + 1 (terminator)
+	comp_content_len := d.z.header.len // current header length = COMP content
+	hcomp_len := hsize - comp_content_len
+
+	// Read HCOMP bytes (including terminator)
+	for i := 0; i < hcomp_len; i++ {
+		b := d.input.get()
+		if b < 0 {
+			return false
+		}
+		d.z.header << u8(b)
+	}
+
+	d.z.hend = d.z.header.len - 1 // points to HCOMP terminator
+
+	// Initialize arrays
+	d.z.inith()
+	d.z.initp()
+
+	// Initialize predictor
+	d.pr = Predictor.new()
+	d.pr.init(&d.z)
+
+	d.state = decomp_state_block
+	return true
 }
 
 // Find and read the next filename
@@ -234,24 +247,18 @@ pub fn (mut d Decompresser) find_filename() bool {
 		return false
 	}
 
-	// Skip any leading zeros (part of locator tag pattern)
-	mut marker := 0
-	for {
-		marker = d.input.get()
-		if marker < 0 {
-			return false
-		}
-		if marker != 0 {
-			break
-		}
+	// Read segment marker (1) or end of block marker (255)
+	marker := d.input.get()
+	if marker < 0 {
+		return false
 	}
 
-	// Check segment marker (1) or end of block (255)
+	// Check for end of block marker (255)
 	if marker == 0xFF {
-		// End of block marker
 		d.state = decomp_state_start
 		return false
 	}
+
 	// marker should be 1 for a valid segment; other values indicate format error
 	// but we continue anyway for robustness
 
@@ -338,6 +345,34 @@ pub fn (mut d Decompresser) decompress(n int) bool {
 		return d.decompress_store(n)
 	}
 
+	// On first call, read and handle post-processing mode
+	// The first byte of the compressed data is the PP mode:
+	// 0 = PASS (no post-processing)
+	// 1 = PROG (has a post-processing program)
+	if d.first_seg {
+		pp_mode := d.dec.decompress()
+		if pp_mode < 0 {
+			return false
+		}
+		if pp_mode == 1 {
+			// PROG mode: read PCOMP size and skip the program
+			// We don't support PCOMP yet, just skip it
+			psize_lo := d.dec.decompress()
+			psize_hi := d.dec.decompress()
+			if psize_lo < 0 || psize_hi < 0 {
+				return false
+			}
+			psize := psize_lo + psize_hi * 256
+			for i := 0; i < psize; i++ {
+				if d.dec.decompress() < 0 {
+					return false
+				}
+			}
+		}
+		// pp_mode == 0 means PASS, no additional data to read
+		d.first_seg = false
+	}
+
 	// Compressed mode
 	mut count := 0
 	mut limit := n
@@ -396,6 +431,24 @@ fn (mut d Decompresser) decompress_store(n int) bool {
 			// Length 0 means end of data
 			if d.store_count == 0 {
 				return false
+			}
+
+			// Handle PP mode byte at start of first chunk
+			if d.first_seg {
+				pp_mode := d.input.get()
+				if pp_mode < 0 {
+					return false
+				}
+				d.store_count-- // PP mode byte is counted in length
+				// pp_mode == 0 means PASS (no post-processing)
+				// pp_mode == 1 would mean PCOMP program follows (not supported in store mode)
+				d.first_seg = false
+				
+				// If the current chunk is exhausted after reading PP mode byte, 
+				// continue to read the next chunk length
+				if d.store_count == 0 {
+					continue
+				}
 			}
 		}
 
