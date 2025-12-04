@@ -377,11 +377,8 @@ pub fn (mut c Compressor) end_segment() {
 			// Flush encoder (writes remaining state bytes)
 			c.enc.flush()
 
-			// Write 4 zero bytes after encoder flush (required by libzpaq format)
-			c.output.put(0)
-			c.output.put(0)
-			c.output.put(0)
-			c.output.put(0)
+			// Note: No 4-zero-byte terminator for compressed mode
+			// The encoder's flush() outputs the final state bytes
 		}
 
 		// Compute SHA1 hash
