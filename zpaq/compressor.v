@@ -23,10 +23,10 @@ mut:
 	pr         Predictor // prediction model
 	input      &Reader = unsafe { nil }
 	output     &Writer = unsafe { nil }
-	sha1       SHA1   // SHA1 hash of original uncompressed data for integrity verification
-	level      int    // compression level (0-5)
-	store_buf  []u8   // buffer for store mode
-	store_size u32    // bytes in store buffer
+	sha1       SHA1 // SHA1 hash of original uncompressed data for integrity verification
+	level      int  // compression level (0-5)
+	store_buf  []u8 // buffer for store mode
+	store_size u32  // bytes in store buffer
 }
 
 // Create a new compressor
@@ -88,7 +88,7 @@ pub fn (mut c Compressor) start_block(level int) {
 	// Initialize ZPAQL with header
 	c.z.clear()
 	c.z.header = config.hcomp.clone()
-	
+
 	// Parse header to find cend, hbegin, hend
 	// Header format: hm hh ph pm n [comp1]...[compN] 0 [HCOMP code] 0 [PCOMP code] 0
 	if c.z.header.len >= 5 {
@@ -141,7 +141,7 @@ pub fn (mut c Compressor) start_block(level int) {
 		c.z.hbegin = c.z.header.len
 		c.z.hend = c.z.header.len
 	}
-	
+
 	c.z.inith()
 	c.z.initp()
 

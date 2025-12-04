@@ -428,15 +428,15 @@ fn test_encoder_decoder_symmetry() {
 fn test_codec_roundtrip_level1() {
 	// Test a simple round-trip through encoder/decoder
 	original := 'Hello World!'
-	
+
 	// Create output buffer
 	mut output := FileWriter.new()
-	
+
 	// Create ZPAQL with level 1 header
 	level := get_compression_level(1)
 	mut z := ZPAQL.new()
 	z.header = level.hcomp.clone()
-	
+
 	// Parse header to find cend, hbegin, hend
 	// This duplicates the parsing logic from compressor/decompressor - in production
 	// code this should be extracted to a shared function, but for testing isolation
@@ -448,78 +448,78 @@ fn test_codec_roundtrip_level1() {
 			ctype := int(z.header[pos])
 			if ctype < 0 || ctype >= compsize.len {
 				break
-}
-pos += compsize[ctype]
-}
-}
-z.cend = pos
-if pos < z.header.len && z.header[pos] == 0 {
-pos++
-}
-z.hbegin = pos
-for pos < z.header.len {
-op := z.header[pos]
-if op == 0 {
-break
-}
-pos++
-if (op & 7) == 7 {
-if op == 63 {
-pos += 2
-} else {
-pos += 1
-}
-}
-}
-z.hend = pos
+			}
+			pos += compsize[ctype]
+		}
+	}
+	z.cend = pos
+	if pos < z.header.len && z.header[pos] == 0 {
+		pos++
+	}
+	z.hbegin = pos
+	for pos < z.header.len {
+		op := z.header[pos]
+		if op == 0 {
+			break
+		}
+		pos++
+		if (op & 7) == 7 {
+			if op == 63 {
+				pos += 2
+			} else {
+				pos += 1
+			}
+		}
+	}
+	z.hend = pos
 
-z.inith()
-z.initp()
+	z.inith()
+	z.initp()
 
-mut pr := Predictor.new()
-pr.init(&z)
+	mut pr := Predictor.new()
+	pr.init(&z)
 
-mut enc := Encoder.new()
-enc.init(mut pr, mut output)
+	mut enc := Encoder.new()
+	enc.init(mut pr, mut output)
 
-// Encode each byte
-for b in original {
-enc.compress(int(b))
-}
-enc.compress(-1) // EOF
-enc.flush()
+	// Encode each byte
+	for b in original {
+		enc.compress(int(b))
+	}
+	enc.compress(-1) // EOF
+	enc.flush()
 
-encoded := output.bytes()
-assert encoded.len > 0, 'Encoder produced no output'
+	encoded := output.bytes()
+	assert encoded.len > 0, 'Encoder produced no output'
 
-// Now decode
-mut reader := FileReader.new(encoded)
+	// Now decode
+	mut reader := FileReader.new(encoded)
 
-// Create new ZPAQL with same header
-mut z2 := ZPAQL.new()
-z2.header = level.hcomp.clone()
-z2.cend = z.cend
-z2.hbegin = z.hbegin
-z2.hend = z.hend
-z2.inith()
-z2.initp()
+	// Create new ZPAQL with same header
+	mut z2 := ZPAQL.new()
+	z2.header = level.hcomp.clone()
+	z2.cend = z.cend
+	z2.hbegin = z.hbegin
+	z2.hend = z.hend
+	z2.inith()
+	z2.initp()
 
-mut pr2 := Predictor.new()
-pr2.init(&z2)
+	mut pr2 := Predictor.new()
+	pr2.init(&z2)
 
-mut dec := Decoder.new()
-dec.init(mut pr2, mut reader)
+	mut dec := Decoder.new()
+	dec.init(mut pr2, mut reader)
 
-// Decode bytes
-mut decoded := []u8{}
-for {
-c := dec.decompress()
-if c < 0 {
-break
-}
-decoded << u8(c)
-}
+	// Decode bytes
+	mut decoded := []u8{}
+	for {
+		c := dec.decompress()
+		if c < 0 {
+			break
+		}
+		decoded << u8(c)
+	}
 
-decoded_str := decoded.bytestr()
-assert decoded_str == original, 'Mismatch: got "${decoded_str}", expected "${original}"'
+	decoded_str := decoded.bytestr()
+	assert decoded_str == original, 'Mismatch: got "${decoded_str}", expected "${original}"'
 }

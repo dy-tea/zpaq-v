@@ -17,26 +17,26 @@ enum Command {
 // CLI configuration parsed from command line arguments
 struct Config {
 mut:
-	command         Command
-	archive         string   // archive file path
-	files           []string // files to add/extract
-	all_versions    int = -1 // -all [N]: extract/list versions in N digit directories (-1 = disabled)
-	force           bool     // -f/-force: force append/overwrite
-	index_file      string   // -index F: index file path
-	key             string   // -key X: encryption password
-	method          int = 1  // -mN/-method N: compression level (0-5)
-	no_attributes   bool     // -noattributes: ignore file attributes
-	not_files       []string // -not files...: exclude patterns
-	only_files      []string // -only files...: include patterns
-	repack_file     string   // -repack F: repack to new archive
-	repack_key      string   // -repack key
-	summary         int      // -sN/-summary N: summary options
-	test_mode       bool     // -test: verify without writing
-	threads         int      // -tN/-threads N: thread count (0 = auto)
-	to_files        []string // -to out...: rename output files
-	until_version   int      // -until N: roll back to version
-	until_date      string   // -until date: roll back to date
-	fragment        int = 6  // -fragment N: 2^N KiB average fragment size
+	command       Command
+	archive       string   // archive file path
+	files         []string // files to add/extract
+	all_versions  int = -1 // -all [N]: extract/list versions in N digit directories (-1 = disabled)
+	force         bool   // -f/-force: force append/overwrite
+	index_file    string // -index F: index file path
+	key           string // -key X: encryption password
+	method        int = 1 // -mN/-method N: compression level (0-5)
+	no_attributes bool     // -noattributes: ignore file attributes
+	not_files     []string // -not files...: exclude patterns
+	only_files    []string // -only files...: include patterns
+	repack_file   string   // -repack F: repack to new archive
+	repack_key    string   // -repack key
+	summary       int      // -sN/-summary N: summary options
+	test_mode     bool     // -test: verify without writing
+	threads       int      // -tN/-threads N: thread count (0 = auto)
+	to_files      []string // -to out...: rename output files
+	until_version int      // -until N: roll back to version
+	until_date    string   // -until date: roll back to date
+	fragment      int = 6 // -fragment N: 2^N KiB average fragment size
 }
 
 fn main() {
@@ -46,10 +46,27 @@ fn main() {
 	}
 
 	match cfg.command {
-		.add { run_add(cfg) or { eprintln(err.msg()) exit(1) } }
-		.extract { run_extract(cfg) or { eprintln(err.msg()) exit(1) } }
-		.list { run_list(cfg) or { eprintln(err.msg()) exit(1) } }
-		.help { print_usage() }
+		.add {
+			run_add(cfg) or {
+				eprintln(err.msg())
+				exit(1)
+			}
+		}
+		.extract {
+			run_extract(cfg) or {
+				eprintln(err.msg())
+				exit(1)
+			}
+		}
+		.list {
+			run_list(cfg) or {
+				eprintln(err.msg())
+				exit(1)
+			}
+		}
+		.help {
+			print_usage()
+		}
 	}
 }
 
@@ -203,7 +220,7 @@ fn print_usage() {
 	println('                  Add: create suffix for archive indexed by F, update F.')
 	println('  -key X          Create or access encrypted archive with password X.')
 	println('  -mN, -method N  Compress level N (0..5 = faster..better, default 1).')
-	println('  -noattributes   Ignore/don\'t save file attributes or permissions.')
+	println("  -noattributes   Ignore/don't save file attributes or permissions.")
 	println('  -not files...   Exclude. * and ? match any string or char.')
 	println('  -only files...  Include only matches (default: *).')
 	println('  -repack F       Extract to new archive F.')
@@ -212,7 +229,7 @@ fn print_usage() {
 	println('  -test           Extract: verify but do not write files.')
 	println('  -tN, -threads N Use N threads (default: 0 = auto).')
 	println('  -to out...      Rename files... to out... or all to out/all.')
-	println('  -until N        Roll back archive to N\'th update or -N from end.')
+	println("  -until N        Roll back archive to N'th update or -N from end.")
 	println('')
 	println('Advanced options:')
 	println('  -fragment N     Use 2^N KiB average fragment size (default: 6).')
@@ -295,7 +312,9 @@ fn run_add(cfg Config) ! {
 	comp.end_block()
 
 	// Write archive
-	os.write_file_array(archive, output.bytes()) or { return error('Could not write archive: ${err}') }
+	os.write_file_array(archive, output.bytes()) or {
+		return error('Could not write archive: ${err}')
+	}
 
 	println('Created archive: ${archive}')
 	println('Files added: ${files_to_add.len}')
@@ -376,7 +395,7 @@ fn run_extract(cfg Config) ! {
 		}
 	}
 
-	println('Files ${if cfg.test_mode { "verified" } else { "extracted" }}: ${extracted}')
+	println('Files ${if cfg.test_mode { 'verified' } else { 'extracted' }}: ${extracted}')
 }
 
 // Helper: skip to end of current segment (required because ZPAQ format doesn't store compressed size)
