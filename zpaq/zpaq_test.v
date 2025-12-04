@@ -66,10 +66,10 @@ fn test_statetable_init() {
 	assert st.n0(1) == 1
 	assert st.n1(1) == 0
 
-	// State 3 is after seeing a 1 bit from state 0
-	// Its n0=0, n1=1
-	assert st.n0(3) == 0
-	assert st.n1(3) == 1
+	// State 2 is after seeing a 1 bit from state 0
+	// Its n0=0, n1=1 (libzpaq: sns[8..11] = 4, 6, 0, 1)
+	assert st.n0(2) == 0
+	assert st.n1(2) == 1
 }
 
 // Test StateTable transitions
@@ -80,9 +80,9 @@ fn test_statetable_transitions() {
 	next0 := st.next(0, 0)
 	assert next0 == 1
 
-	// From state 0, seeing a 1 bit goes to state 3
+	// From state 0, seeing a 1 bit goes to state 2 (libzpaq: sns[1] = 2)
 	next1 := st.next(0, 1)
-	assert next1 == 3
+	assert next1 == 2
 }
 
 // Test StateTable cminit probability
@@ -100,10 +100,10 @@ fn test_statetable_cminit() {
 	p1 := st.cminit(1)
 	assert p1 == (1 << 22) / 2, 'cminit(1) = ${p1}, expected ${(1 << 22) / 2}'
 
-	// State 3 (n0=0, n1=1) should have high probability
+	// State 2 (n0=0, n1=1) should have high probability
 	// ((1*2+1)<<22)/(0+1+1) = (3<<22)/2 = 6291456 (~75% of 2^23)
-	p3 := st.cminit(3)
-	assert p3 == (3 << 22) / 2, 'cminit(3) = ${p3}, expected ${(3 << 22) / 2}'
+	p2 := st.cminit(2)
+	assert p2 == (3 << 22) / 2, 'cminit(2) = ${p2}, expected ${(3 << 22) / 2}'
 }
 
 // Test FileReader
