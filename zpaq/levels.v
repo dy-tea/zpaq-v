@@ -72,7 +72,7 @@ fn level_1_fast() CompressionLevel {
 			0, // end of component definitions
 			// HCOMP code: b=c c-- *c=a d=0 hash *d=a d++ *d=a halt
 			// b=c : copy C to B (B will read from previous bytes stored at M[B])
-			// c-- : decrement C (ring buffer pointer)
+			// c-- : move write position backward in circular buffer
 			// *c=a : store current byte at M[C]
 			// d=0 : D = 0
 			// hash : A = (A + M[B] + 512) * 773 (hash with previous byte)
@@ -125,7 +125,7 @@ fn level_2_normal() CompressionLevel {
 			0, // end of component definitions
 			// HCOMP code: b=c c-- *c=a d=0 hash *d=a d++ hash *d=a d++ hash *d=a halt
 			// b=c : B points to previous bytes in M
-			// c-- : advance ring buffer pointer
+			// c-- : move write position backward in circular buffer
 			// *c=a : store current byte in M[C]
 			// Then build context chain with repeated HASH operations
 			74, // b=c
