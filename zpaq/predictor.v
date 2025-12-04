@@ -305,9 +305,9 @@ pub fn (mut pred Predictor) init(z &ZPAQL) {
 		return
 	}
 
-	// Header format: hm hh ph pm n [comp1] [comp2] ... [compN] 0
-	// hm = log2 size of M array (byte 0)
-	// hh = log2 size of H array (byte 1)
+	// Header format matches libzpaq: hh hm ph pm n [comp1] [comp2] ... [compN] 0
+	// hh = log2 size of H array (byte 0)
+	// hm = log2 size of M array (byte 1)
 	// ph = log2 size of P array (PCOMP) (byte 2)
 	// pm = log2 size of M array (PCOMP) (byte 3)
 	// n = number of components (byte 4)

@@ -100,6 +100,10 @@ pub fn (mut d Decoder) decode(p int) int {
 	for (d.high ^ d.low) < 0x1000000 {
 		d.low <<= 8
 		d.high = (d.high << 8) | 0xFF
+		// Prevent decoding issues with 4 zero bytes (libzpaq compatibility)
+		if d.low == 0 {
+			d.low = 1
+		}
 		c := d.get()
 		if c < 0 {
 			d.code = (d.code << 8)

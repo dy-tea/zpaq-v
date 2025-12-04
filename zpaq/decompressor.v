@@ -169,11 +169,11 @@ pub fn (mut d Decompresser) find_block() bool {
 	}
 	hsize := hsize_lo + hsize_hi * 256
 
-	// Read COMP section: hm hh ph pm n [components] 0
+	// Read COMP section (libzpaq format): hh hm ph pm n [components] 0
 	d.z = ZPAQL.new()
 	d.z.header.clear()
 
-	// Read hm hh ph pm n (5 bytes)
+	// Read hh hm ph pm n (5 bytes)
 	for i := 0; i < 5; i++ {
 		b := d.input.get()
 		if b < 0 {
@@ -213,7 +213,7 @@ pub fn (mut d Decompresser) find_block() bool {
 
 	// Calculate how many bytes of HCOMP to read
 	// hsize = COMP content (excluding size bytes) + HCOMP content
-	// COMP content = 5 (hm hh ph pm n) + component bytes + 1 (terminator)
+	// COMP content = 5 (hh hm ph pm n) + component bytes + 1 (terminator)
 	comp_content_len := d.z.header.len // current header length = COMP content
 	hcomp_len := hsize - comp_content_len
 

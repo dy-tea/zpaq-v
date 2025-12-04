@@ -40,7 +40,7 @@ pub fn get_compression_level(level int) CompressionLevel {
 fn level_0_store() CompressionLevel {
 	return CompressionLevel{
 		name: 'store'
-		// Header: hm=0 hh=0 ph=0 pm=0 n=0 + COMP terminator(0) + HCOMP terminator(0)
+		// Header format matches libzpaq: hh hm ph pm n [components] 0 [HCOMP code] 0
 		// This is the minimal header with no components and no HCOMP code
 		hcomp: [u8(0), 0, 0, 0, 0, 0, 0]
 		hh:   0 // log2(H array words) = 0, meaning 1 word
@@ -54,10 +54,10 @@ fn level_1_fast() CompressionLevel {
 	return CompressionLevel{
 		name: 'fast'
 		// This matches libzpaq's model 1 exactly for compatibility
-		// Header format: hm hh ph pm n [components] 0 [HCOMP code] 0
+		// Header format matches libzpaq: hh hm ph pm n [components] 0 [HCOMP code] 0
 		hcomp: [
-			u8(2), // hm = log2(M array bytes) = 2, meaning 4 bytes
-			1, // hh = log2(H array words) = 1, meaning 2 words
+			u8(1), // hh = log2(H array words) = 1, meaning 2 words
+			2, // hm = log2(M array bytes) = 2, meaning 4 bytes
 			0, // ph = 0 (no PCOMP)
 			0, // pm = 0
 			2, // n = 2 components (ICM + ISSE)
@@ -96,9 +96,10 @@ fn level_1_fast() CompressionLevel {
 fn level_2_normal() CompressionLevel {
 	return CompressionLevel{
 		name:  'normal'
+		// Header format matches libzpaq: hh hm ph pm n [components] 0 [HCOMP code] 0
 		hcomp: [
-			u8(16), // hm = 64KB M array
-			9, // hh = 512 words H array
+			u8(9), // hh = 512 words H array
+			16, // hm = 64KB M array
 			0, // ph = 0
 			0, // pm = 0
 			3, // n = 3 components (ICM + 2 ISSE)
@@ -149,9 +150,10 @@ fn level_2_normal() CompressionLevel {
 fn level_3_high() CompressionLevel {
 	return CompressionLevel{
 		name:  'high'
+		// Header format matches libzpaq: hh hm ph pm n [components] 0 [HCOMP code] 0
 		hcomp: [
-			u8(18), // hm = 256KB M array
-			10, // hh = 1024 words H array
+			u8(10), // hh = 1024 words H array
+			18, // hm = 256KB M array
 			0, // ph = 0
 			0, // pm = 0
 			5, // n = 5 components
@@ -211,9 +213,10 @@ fn level_3_high() CompressionLevel {
 fn level_4_max() CompressionLevel {
 	return CompressionLevel{
 		name:  'max'
+		// Header format matches libzpaq: hh hm ph pm n [components] 0 [HCOMP code] 0
 		hcomp: [
-			u8(20), // hm = 1MB M array
-			12, // hh = 4K words H array
+			u8(12), // hh = 4K words H array
+			20, // hm = 1MB M array
 			0, // ph = 0
 			0, // pm = 0
 			7, // n = 7 components
@@ -287,9 +290,10 @@ fn level_4_max() CompressionLevel {
 fn level_5_max() CompressionLevel {
 	return CompressionLevel{
 		name:  'ultra'
+		// Header format matches libzpaq: hh hm ph pm n [components] 0 [HCOMP code] 0
 		hcomp: [
-			u8(22), // hm = 4MB M array
-			14, // hh = 16K words H array
+			u8(14), // hh = 16K words H array
+			22, // hm = 4MB M array
 			0, // ph = 0
 			0, // pm = 0
 			9, // n = 9 components
@@ -372,12 +376,13 @@ fn level_5_max() CompressionLevel {
 
 // Build HCOMP header for a given component configuration
 // This allows custom configurations beyond predefined levels
-pub fn build_hcomp_header(hm int, hh int, components []ComponentConfig) []u8 {
+// Note: Parameter order matches libzpaq - (hh, hm)
+pub fn build_hcomp_header(hh int, hm int, components []ComponentConfig) []u8 {
 	mut header := []u8{}
 
-	// Header: hm hh ph pm n [components] end(0) end(0)
-	header << u8(hm)
+	// Header format matches libzpaq: hh hm ph pm n [components] end(0) end(0)
 	header << u8(hh)
+	header << u8(hm)
 	header << u8(0) // ph (no PCOMP)
 	header << u8(0) // pm
 	header << u8(components.len)
