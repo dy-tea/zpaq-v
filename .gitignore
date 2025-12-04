@@ -31,3 +31,5 @@ extracted_store/
 test_archive_*.zpaq
 test.zpaq
 test_store.zpaq
+v/
+v_linux.zip
