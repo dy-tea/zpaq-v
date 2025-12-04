@@ -4,7 +4,7 @@ module zpaq
 
 // Component types for compression models
 pub enum CompType {
-	none
+	none_
 	cons
 	cm
 	icm
@@ -49,23 +49,18 @@ pub const zpaql_b_eq_m = 2 // b = *c
 
 // Returns the length (in bytes) of opcode op
 pub fn oplen(op u8) int {
-	if op < 7 {
-		return 1
-	}
-	if op < 56 {
-		if op % 8 == 7 {
-			return 2
-		}
-		return 1
-	}
-	if op == 56 {
-		return 1 // error
-	}
+	// LJ (255) is a 3-byte instruction
 	if op == 255 {
-		return 3 // LJ
+		return 3
 	}
-	// 57-254 are 2-byte ops
-	return 2
+	// All opcodes where (op & 7) == 7 have a 1-byte operand (2 bytes total)
+	// This includes: 7, 15, 23, 31, 39, 47, 55, 63, 71, 79, 87, 95, 103, 111, 119, etc.
+	// Exception: opcode 63 (jmp) is a jump, which also has 1-byte operand
+	if (op & 7) == 7 {
+		return 2
+	}
+	// All other opcodes are 1-byte instructions
+	return 1
 }
 
 // Check if opcode is an error instruction
@@ -74,23 +69,25 @@ pub fn iserr(op u8) bool {
 }
 
 // Component sizes in bytes for each component type index
+// This includes the type byte itself
+// Reference: libzpaq.cpp compsize[256]={0,2,3,2,3,4,6,6,3,5}
 pub const compsize = [
-	0, // none
-	2, // const
-	3, // cm
-	2, // icm
-	3, // match
-	4, // avg
-	3, // mix2
-	3, // mix
-	3, // isse
-	3, // sse
+	0, // none (0)
+	2, // const (1): type + value
+	3, // cm (2): type + sizebits + limit
+	2, // icm (3): type + sizebits
+	3, // match (4): type + sizebits + bufbits
+	4, // avg (5): type + j + k + wt
+	6, // mix2 (6): type + sizebits + j + k + rate + mask
+	6, // mix (7): type + sizebits + j + m + rate + mask
+	3, // isse (8): type + sizebits + j (j = previous component to use)
+	5, // sse (9): type + sizebits + j + start + limit
 ]
 
 // Get component type from byte value
 pub fn get_comp_type(b u8) CompType {
 	return match int(b) {
-		0 { CompType.none }
+		0 { CompType.none_ }
 		1 { CompType.cons }
 		2 { CompType.cm }
 		3 { CompType.icm }
@@ -100,6 +97,6 @@ pub fn get_comp_type(b u8) CompType {
 		7 { CompType.mix }
 		8 { CompType.isse }
 		9 { CompType.sse }
-		else { CompType.none }
+		else { CompType.none_ }
 	}
 }

@@ -2,6 +2,10 @@
 // Ported from libzpaq by Matt Mahoney, public domain
 module zpaq
 
+// Probability for EOF/data bit - low value means EOF is rare
+// 256/65536 ≈ 0.4% probability of EOF, makes encoding data bytes cheap
+const eof_probability = 256
+
 // Encoder implements arithmetic encoding with optional prediction
 pub struct Encoder {
 pub mut:
@@ -55,10 +59,13 @@ pub fn (mut e Encoder) encode(y int, p int) {
 	range_ := e.high - e.low
 	mid := e.low + u32((u64(range_) * u64(pr)) >> 16)
 
+	// libzpaq: if (y) high=mid; else low=mid+1;
+	// y=1 means take lower portion [low, mid] (probability p)
+	// y=0 means take upper portion (mid, high] (probability 1-p)
 	if y != 0 {
-		e.low = mid + 1
-	} else {
 		e.high = mid
+	} else {
+		e.low = mid + 1
 	}
 
 	// Output bytes when range is small enough
@@ -73,18 +80,31 @@ pub fn (mut e Encoder) encode(y int, p int) {
 }
 
 // Compress one byte using predictor (libzpaq compatible)
+// Pass c=-1 to encode EOF marker
 pub fn (mut e Encoder) compress(c int) {
 	if e.pr == unsafe { nil } {
 		return
 	}
+
+	// First encode EOF/data bit
+	// y=1 means EOF, y=0 means data follows
+	// Use small probability for EOF so data bytes are cheap to encode
+	if c == -1 {
+		// EOF marker (expensive)
+		e.encode(1, eof_probability)
+		return
+	}
+
+	// Data byte follows (cheap)
+	e.encode(0, eof_probability)
 
 	// Encode each bit MSB first
 	for i := 7; i >= 0; i-- {
 		y := (c >> i) & 1
 		// Get probability - predictor returns 1..32767, scale to 1..65535
 		p := e.pr.predict()
-		// Scale: p * 65536 / 32768 = p * 2
-		scaled_p := p * 2
+		// Scale: p * 65536 / 32768 = p * 2 + 1 to match libzpaq
+		scaled_p := p * 2 + 1
 		e.encode(y, scaled_p)
 		e.pr.update(y)
 	}

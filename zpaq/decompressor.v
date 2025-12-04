@@ -64,29 +64,33 @@ pub fn (mut pp PostProcessor) clear_output() {
 // Decompresser provides high-level ZPAQ decompression
 pub struct Decompresser {
 mut:
-	state    int           // current state
-	z        ZPAQL         // ZPAQL VM for HCOMP
-	dec      Decoder       // arithmetic decoder
-	pr       Predictor     // prediction model
-	pp       PostProcessor // post processor
-	input    &Reader = unsafe { nil }
-	output   &Writer = unsafe { nil }
-	sha1     SHA1   // hash of decompressed data
-	filename string // current filename
-	comment  string // current comment
+	state       int           // current state
+	z           ZPAQL         // ZPAQL VM for HCOMP
+	dec         Decoder       // arithmetic decoder
+	pr          Predictor     // prediction model
+	pp          PostProcessor // post processor
+	input       &Reader = unsafe { nil }
+	output      &Writer = unsafe { nil }
+	sha1        SHA1   // hash of decompressed data
+	filename    string // current filename
+	comment     string // current comment
+	store_count u32    // remaining bytes in current store chunk
+	first_seg   bool   // first segment in block (need to init decoder)
 }
 
 // Create a new decompresser
 pub fn Decompresser.new() Decompresser {
 	return Decompresser{
-		state:    decomp_state_start
-		z:        ZPAQL.new()
-		dec:      Decoder.new()
-		pr:       Predictor.new()
-		pp:       PostProcessor.new()
-		sha1:     SHA1.new()
-		filename: ''
-		comment:  ''
+		state:       decomp_state_start
+		z:           ZPAQL.new()
+		dec:         Decoder.new()
+		pr:          Predictor.new()
+		pp:          PostProcessor.new()
+		sha1:        SHA1.new()
+		filename:    ''
+		comment:     ''
+		store_count: 0
+		first_seg:   true
 	}
 }
 
@@ -138,16 +142,84 @@ pub fn (mut d Decompresser) find_block() bool {
 			return false
 		}
 
-		// Read HCOMP
-		d.z = ZPAQL.new()
-		n := d.z.read(mut d.input)
-		if n < 0 {
+		// Read HCOMP header size (2 bytes, little-endian)
+		len_lo := d.input.get()
+		len_hi := d.input.get()
+		if len_lo < 0 || len_hi < 0 {
 			return false
 		}
+		hlen := len_lo | (len_hi << 8)
+
+		// Read HCOMP header bytes
+		d.z = ZPAQL.new()
+		d.z.header.clear()
+		for i := 0; i < hlen; i++ {
+			b := d.input.get()
+			if b < 0 {
+				return false
+			}
+			d.z.header << u8(b)
+		}
+
+		// Parse header to find cend, hbegin, hend
+		// Header format: hm hh ph pm n [comp1]...[compN] 0 [HCOMP code] 0 [PCOMP code] 0
+		if hlen >= 5 {
+			n := int(d.z.header[4])
+			mut pos := 5
+			// Skip component definitions
+			for i := 0; i < n && pos < hlen; i++ {
+				if pos >= hlen {
+					break
+				}
+				ctype := int(d.z.header[pos])
+				// Bounds check for ctype before accessing compsize array
+				if ctype < 0 || ctype >= compsize.len {
+					break
+				}
+				pos += compsize[ctype]
+			}
+			// pos now points to the 0 byte that ends component definitions
+			d.z.cend = pos
+			// hbegin is after the 0 that ends components
+			if pos < hlen && d.z.header[pos] == 0 {
+				pos++
+			}
+			d.z.hbegin = pos
+			// Find end of HCOMP code - need to parse opcodes and skip operands
+			// Opcode format: if (opcode & 7) == 7 and opcode > 0, it has a 1-byte operand
+			// Special case: LJ (opcode 63) has a 2-byte operand
+			for pos < hlen {
+				op := d.z.header[pos]
+				if op == 0 {
+					// 0 byte that's not an operand = end of HCOMP
+					break
+				}
+				pos++
+				// Check if this opcode has operands
+				if (op & 7) == 7 {
+					// This opcode has a 1-byte operand (skip it)
+					if op == 63 {
+						// LJ has 2-byte operand
+						pos += 2
+					} else {
+						pos += 1
+					}
+				}
+			}
+			d.z.hend = pos
+		} else {
+			d.z.cend = hlen
+			d.z.hbegin = hlen
+			d.z.hend = hlen
+		}
+
+		// Initialize arrays
+		d.z.inith()
+		d.z.initp()
 
 		// Initialize predictor
 		d.pr = Predictor.new()
-		d.pr.init(mut d.z)
+		d.pr.init(&d.z)
 
 		d.state = decomp_state_block
 		return true
@@ -162,6 +234,27 @@ pub fn (mut d Decompresser) find_filename() bool {
 		return false
 	}
 
+	// Skip any leading zeros (part of locator tag pattern)
+	mut marker := 0
+	for {
+		marker = d.input.get()
+		if marker < 0 {
+			return false
+		}
+		if marker != 0 {
+			break
+		}
+	}
+
+	// Check segment marker (1) or end of block (255)
+	if marker == 0xFF {
+		// End of block marker
+		d.state = decomp_state_start
+		return false
+	}
+	// marker should be 1 for a valid segment; other values indicate format error
+	// but we continue anyway for robustness
+
 	// Read filename (null-terminated)
 	mut filename_bytes := []u8{}
 	for {
@@ -173,7 +266,7 @@ pub fn (mut d Decompresser) find_filename() bool {
 			break
 		}
 		if c == 0xFF {
-			// End of block marker
+			// End of block marker encountered unexpectedly
 			d.state = decomp_state_start
 			return false
 		}
@@ -195,12 +288,29 @@ pub fn (mut d Decompresser) find_filename() bool {
 	}
 	d.comment = comment_bytes.bytestr()
 
-	// Initialize decoder
-	d.dec = Decoder.new()
-	d.dec.init(mut d.pr, mut d.input)
+	// Read reserved byte (must be 0 in libzpaq format)
+	reserved := d.input.get()
+	if reserved < 0 {
+		return false
+	}
+	// Note: reserved byte is ignored for now
+
+	// Only initialize decoder for compressed mode (not store mode)
+	// For store mode, we read raw bytes without arithmetic decoding
+	// A new decoder is created for each segment to ensure clean state
+	if d.pr.is_modeled() {
+		// Reset predictor state for new segment (must match compressor behavior)
+		d.pr.reset()
+		d.dec = Decoder.new()
+		d.dec.init(mut d.pr, mut d.input)
+	}
 
 	// Reset SHA1
 	d.sha1 = SHA1.new()
+
+	// Reset store count for store mode
+	d.store_count = 0
+	d.first_seg = true
 
 	d.state = decomp_state_segment
 	return true
@@ -216,23 +326,30 @@ pub fn (d &Decompresser) get_comment() string {
 	return d.comment
 }
 
-// Decompress n bytes
+// Decompress n bytes or all remaining if n < 0
 // Returns true if more data available
 pub fn (mut d Decompresser) decompress(n int) bool {
 	if d.state != decomp_state_segment {
 		return false
 	}
 
+	// Check if using store mode (no components) or compressed mode
+	if !d.pr.is_modeled() {
+		return d.decompress_store(n)
+	}
+
+	// Compressed mode
 	mut count := 0
-	for count < n {
+	mut limit := n
+	if limit < 0 {
+		limit = 0x7FFFFFFF // decompress all
+	}
+
+	for count < limit {
 		c := d.dec.decompress()
 		if c < 0 {
+			// EOF marker reached
 			return false
-		}
-
-		// Check for EOF marker
-		if c == 0 {
-			// Could be end of segment
 		}
 
 		// Update hash
@@ -249,32 +366,95 @@ pub fn (mut d Decompresser) decompress(n int) bool {
 	return true
 }
 
+// Decompress store mode (raw bytes with length prefix)
+fn (mut d Decompresser) decompress_store(n int) bool {
+	if d.input == unsafe { nil } {
+		return false
+	}
+
+	mut count := 0
+	mut limit := n
+	if limit < 0 {
+		limit = 0x7FFFFFFF // decompress all
+	}
+
+	for count < limit {
+		// Read next chunk if current one is exhausted
+		if d.store_count == 0 {
+			// Read 4-byte big-endian length
+			b0 := d.input.get()
+			b1 := d.input.get()
+			b2 := d.input.get()
+			b3 := d.input.get()
+
+			if b0 < 0 || b1 < 0 || b2 < 0 || b3 < 0 {
+				return false
+			}
+
+			d.store_count = (u32(b0) << 24) | (u32(b1) << 16) | (u32(b2) << 8) | u32(b3)
+
+			// Length 0 means end of data
+			if d.store_count == 0 {
+				return false
+			}
+		}
+
+		// Read one byte from current chunk
+		c := d.input.get()
+		if c < 0 {
+			return false
+		}
+
+		// Update hash
+		d.sha1.put(c)
+
+		// Write to output
+		if d.output != unsafe { nil } {
+			d.output.put(c)
+		}
+
+		d.store_count--
+		count++
+	}
+
+	return true
+}
+
 // Read and verify segment end
 pub fn (mut d Decompresser) read_segment_end() {
 	if d.state != decomp_state_segment {
 		return
 	}
 
-	// Read SHA1 hash (20 bytes)
-	mut stored_hash := []u8{len: 20}
-	for i := 0; i < 20; i++ {
-		c := d.input.get()
-		if c >= 0 {
-			stored_hash[i] = u8(c)
-		}
-	}
+	// Read segment end marker
+	// Format: 253 + 20 bytes SHA1, or 254 (no checksum)
+	marker := d.input.get()
 
-	// Compare with computed hash
-	computed_hash := d.sha1.result()
-	_ = computed_hash // Hash verification can be checked if needed
-	for i := 0; i < 20 && i < computed_hash.len; i++ {
-		if stored_hash[i] != computed_hash[i] {
-			// Hash mismatch
-			break
+	if marker == 253 {
+		// Read SHA1 hash (20 bytes)
+		mut stored_hash := []u8{len: 20}
+		for i := 0; i < 20; i++ {
+			c := d.input.get()
+			if c >= 0 {
+				stored_hash[i] = u8(c)
+			}
 		}
-	}
 
-	// Hash verification result can be checked if needed
+		// Compare with computed hash (optional verification)
+		computed_hash := d.sha1.result()
+		mut hash_match := true
+		for i := 0; i < 20 && i < computed_hash.len; i++ {
+			if stored_hash[i] != computed_hash[i] {
+				hash_match = false
+				break
+			}
+		}
+		// hash_match can be used for verification if needed
+		_ = hash_match
+	} else if marker == 254 {
+		// No checksum, nothing more to read
+	}
+	// Other values are errors but we ignore them for robustness
 
 	d.state = decomp_state_block
 }

@@ -4,7 +4,7 @@ module zpaq
 
 // ZPAQL virtual machine for executing ZPAQL programs
 pub struct ZPAQL {
-mut:
+pub mut:
 	// Registers
 	a  u32 // accumulator
 	b  u32 // byte pointer
@@ -172,16 +172,53 @@ pub fn (mut z ZPAQL) run(input u32) {
 	}
 }
 
+// Helper for safe M array access
+fn (z &ZPAQL) m_get(i u32) u8 {
+	if z.m.len == 0 {
+		return 0
+	}
+	idx := i & u32(z.m.len - 1)
+	return z.m[idx]
+}
+
+// Helper for safe M array write
+fn (mut z ZPAQL) m_set(i u32, val u8) {
+	if z.m.len == 0 {
+		return
+	}
+	idx := i & u32(z.m.len - 1)
+	z.m[idx] = val
+}
+
+// Helper for safe H array access
+fn (z &ZPAQL) h_get(i u32) u32 {
+	if z.h.len == 0 {
+		return 0
+	}
+	idx := i & u32(z.h.len - 1)
+	return z.h[idx]
+}
+
+// Helper for safe H array write
+fn (mut z ZPAQL) h_set(i u32, val u32) {
+	if z.h.len == 0 {
+		return
+	}
+	idx := i & u32(z.h.len - 1)
+	z.h[idx] = val
+}
+
 // Execute one instruction, return false to stop
+// Matches libzpaq ZPAQL::run0() exactly
 pub fn (mut z ZPAQL) execute() bool {
-	if z.pc < 0 || z.pc >= z.header.len {
+	if z.pc < z.hbegin || z.pc >= z.hend {
 		return false
 	}
 
 	op := z.header[z.pc]
 	z.pc++
 
-	// Get operand if needed
+	// Get operand if needed for 2-byte and 3-byte instructions
 	mut operand := 0
 	if oplen(op) == 2 && z.pc < z.header.len {
 		operand = int(z.header[z.pc])
@@ -191,261 +228,254 @@ pub fn (mut z ZPAQL) execute() bool {
 		z.pc += 2
 	}
 
-	// Execute opcode
+	// Execute opcode - matches libzpaq exactly
+	// Reference: libzpaq.cpp run0() function
 	match op {
-		0 {
-			// NOP
-		}
-		1 {
-			// A = *B
-			if z.b < u32(z.m.len) {
-				z.a = u32(z.m[z.b])
-			}
-		}
-		2 {
-			// A = *C
-			if z.c < u32(z.m.len) {
-				z.a = u32(z.m[z.c])
-			}
-		}
-		3 {
-			// A = *D
-			if z.d < u32(z.m.len) {
-				z.a = u32(z.m[z.d])
-			}
-		}
-		4 {
-			// *B = A
-			if z.b < u32(z.m.len) {
-				z.m[z.b] = u8(z.a)
-			}
-		}
-		5 {
-			// *C = A
-			if z.c < u32(z.m.len) {
-				z.m[z.c] = u8(z.a)
-			}
-		}
-		6 {
-			// *D = A
-			if z.d < u32(z.m.len) {
-				z.m[z.d] = u8(z.a)
-			}
-		}
-		7 {
-			// A = N
-			z.a = u32(operand)
-		}
-		8 {
-			// B = N
-			z.b = u32(operand)
-		}
-		9 {
-			// C = N
-			z.c = u32(operand)
-		}
-		10 {
-			// D = N
-			z.d = u32(operand)
-		}
-		11 {
-			// A += N
-			z.a += u32(operand)
-		}
-		12 {
-			// A -= N
-			z.a -= u32(operand)
-		}
-		13 {
-			// A *= N
-			z.a *= u32(operand)
-		}
-		14 {
-			// A /= N
-			if operand != 0 {
-				z.a /= u32(operand)
-			}
-		}
-		15 {
-			// A %= N
-			if operand != 0 {
-				z.a %= u32(operand)
-			}
-		}
-		16 {
-			// A &= N
-			z.a &= u32(operand)
-		}
-		17 {
-			// A |= N
-			z.a |= u32(operand)
-		}
-		18 {
-			// A ^= N
-			z.a ^= u32(operand)
-		}
-		19 {
-			// A <<= N
-			z.a <<= u32(operand)
-		}
-		20 {
-			// A >>= N
-			z.a >>= u32(operand)
-		}
-		21 {
-			// A == N
-			z.f = if z.a == u32(operand) { 1 } else { 0 }
-		}
-		22 {
-			// A < N
-			z.f = if z.a < u32(operand) { 1 } else { 0 }
-		}
-		23 {
-			// A > N
-			z.f = if z.a > u32(operand) { 1 } else { 0 }
-		}
-		24 {
-			// A += B
-			z.a += z.b
-		}
-		25 {
-			// A -= B
-			z.a -= z.b
-		}
-		26 {
-			// A *= B
-			z.a *= z.b
-		}
-		27 {
-			// A /= B
-			if z.b != 0 {
-				z.a /= z.b
-			}
-		}
-		28 {
-			// A %= B
-			if z.b != 0 {
-				z.a %= z.b
-			}
-		}
-		29 {
-			// A &= B
-			z.a &= z.b
-		}
-		30 {
-			// A |= B
-			z.a |= z.b
-		}
-		31 {
-			// A ^= B
-			z.a ^= z.b
-		}
-		32 {
-			// A <<= B
-			z.a <<= (z.b & 31)
-		}
-		33 {
-			// A >>= B
-			z.a >>= (z.b & 31)
-		}
-		34 {
-			// A == B
-			z.f = if z.a == z.b { 1 } else { 0 }
-		}
-		35 {
-			// A < B
-			z.f = if z.a < z.b { 1 } else { 0 }
-		}
-		36 {
-			// A > B
-			z.f = if z.a > z.b { 1 } else { 0 }
-		}
-		37 {
-			// B = A
-			z.b = z.a
-		}
-		38 {
-			// SWAP A,B
-			z.a, z.b = z.b, z.a
-		}
-		39 {
-			// JT N (jump if true)
+		0 { /* NOP */ }
+		// A register operations (1-7)
+		1 { z.a++ } // A++
+		2 { z.a-- } // A--
+		3 { z.a = ~z.a } // A!
+		4 { z.a = 0 } // A=0
+		7 { z.a = z.r[operand & 255] } // A=R N
+		// B register operations (8-15)
+		8 { z.a, z.b = z.b, z.a } // B<>A (swap A and B)
+		9 { z.b++ } // B++
+		10 { z.b-- } // B--
+		11 { z.b = ~z.b } // B!
+		12 { z.b = 0 } // B=0
+		15 { z.b = z.r[operand & 255] } // B=R N
+		// C register operations (16-23)
+		16 { z.a, z.c = z.c, z.a } // C<>A (swap A and C)
+		17 { z.c++ } // C++
+		18 { z.c-- } // C--
+		19 { z.c = ~z.c } // C!
+		20 { z.c = 0 } // C=0
+		23 { z.c = z.r[operand & 255] } // C=R N
+		// D register operations (24-31)
+		24 { z.a, z.d = z.d, z.a } // D<>A (swap A and D)
+		25 { z.d++ } // D++
+		26 { z.d-- } // D--
+		27 { z.d = ~z.d } // D!
+		28 { z.d = 0 } // D=0
+		31 { z.d = z.r[operand & 255] } // D=R N
+		// *B memory operations (32-39)
+		32 { tmp := z.m_get(z.b); z.m_set(z.b, u8(z.a)); z.a = u32(tmp) } // *B<>A
+		33 { z.m_set(z.b, z.m_get(z.b) + 1) } // *B++
+		34 { z.m_set(z.b, z.m_get(z.b) - 1) } // *B--
+		35 { z.m_set(z.b, ~z.m_get(z.b)) } // *B!
+		36 { z.m_set(z.b, 0) } // *B=0
+		39 { // JT N (jump if true)
 			if z.f != 0 {
-				z.pc += operand
+				z.pc += ((operand + 128) & 255) - 127
 			}
 		}
-		40 {
-			// C = A
-			z.c = z.a
-		}
-		41 {
-			// SWAP A,C
-			z.a, z.c = z.c, z.a
-		}
-		42 {
-			// D = A
-			z.d = z.a
-		}
-		43 {
-			// SWAP A,D
-			z.a, z.d = z.d, z.a
-		}
-		44 {
-			// HALT
-			return false
-		}
-		45 {
-			// OUT A
-			z.outc(int(z.a & 0xFF))
-		}
-		46 {
-			// NOT A
-			z.a = ~z.a
-		}
-		47 {
-			// JF N (jump if false)
+		// *C memory operations (40-47)
+		40 { tmp := z.m_get(z.c); z.m_set(z.c, u8(z.a)); z.a = u32(tmp) } // *C<>A
+		41 { z.m_set(z.c, z.m_get(z.c) + 1) } // *C++
+		42 { z.m_set(z.c, z.m_get(z.c) - 1) } // *C--
+		43 { z.m_set(z.c, ~z.m_get(z.c)) } // *C!
+		44 { z.m_set(z.c, 0) } // *C=0
+		47 { // JF N (jump if false)
 			if z.f == 0 {
-				z.pc += operand
+				z.pc += ((operand + 128) & 255) - 127
 			}
 		}
-		48...55 {
-			// R0..R7 = A
-			idx := int(op - 48)
-			z.r[idx] = z.a
+		// *D hash table operations (48-55)
+		48 { tmp := z.h_get(z.d); z.h_set(z.d, z.a); z.a = tmp } // *D<>A
+		49 { z.h_set(z.d, z.h_get(z.d) + 1) } // *D++
+		50 { z.h_set(z.d, z.h_get(z.d) - 1) } // *D--
+		51 { z.h_set(z.d, ~z.h_get(z.d)) } // *D!
+		52 { z.h_set(z.d, 0) } // *D=0
+		55 { z.r[operand & 255] = z.a } // R=A N
+		56 { return false } // HALT
+		57 { z.outc(int(z.a & 255)) } // OUT
+		59 { z.a = (z.a + u32(z.m_get(z.b)) + 512) * 773 } // HASH
+		60 { z.h_set(z.d, (z.h_get(z.d) + z.a + 512) * 773) } // HASHD
+		63 { z.pc += ((operand + 128) & 255) - 127 } // JMP N
+		// Assignment opcodes 64-119
+		64 { /* A=A */ }
+		65 { z.a = z.b } // A=B
+		66 { z.a = z.c } // A=C
+		67 { z.a = z.d } // A=D
+		68 { z.a = u32(z.m_get(z.b)) } // A=*B
+		69 { z.a = u32(z.m_get(z.c)) } // A=*C
+		70 { z.a = z.h_get(z.d) } // A=*D
+		71 { z.a = u32(operand) } // A=N
+		72 { z.b = z.a } // B=A
+		73 { /* B=B */ }
+		74 { z.b = z.c } // B=C
+		75 { z.b = z.d } // B=D
+		76 { z.b = u32(z.m_get(z.b)) } // B=*B
+		77 { z.b = u32(z.m_get(z.c)) } // B=*C
+		78 { z.b = z.h_get(z.d) } // B=*D
+		79 { z.b = u32(operand) } // B=N
+		80 { z.c = z.a } // C=A
+		81 { z.c = z.b } // C=B
+		82 { /* C=C */ }
+		83 { z.c = z.d } // C=D
+		84 { z.c = u32(z.m_get(z.b)) } // C=*B
+		85 { z.c = u32(z.m_get(z.c)) } // C=*C
+		86 { z.c = z.h_get(z.d) } // C=*D
+		87 { z.c = u32(operand) } // C=N
+		88 { z.d = z.a } // D=A
+		89 { z.d = z.b } // D=B
+		90 { z.d = z.c } // D=C
+		91 { /* D=D */ }
+		92 { z.d = u32(z.m_get(z.b)) } // D=*B
+		93 { z.d = u32(z.m_get(z.c)) } // D=*C
+		94 { z.d = z.h_get(z.d) } // D=*D
+		95 { z.d = u32(operand) } // D=N
+		96 { z.m_set(z.b, u8(z.a)) } // *B=A
+		97 { z.m_set(z.b, u8(z.b)) } // *B=B
+		98 { z.m_set(z.b, u8(z.c)) } // *B=C
+		99 { z.m_set(z.b, u8(z.d)) } // *B=D
+		100 { /* *B=*B */ }
+		101 { z.m_set(z.b, z.m_get(z.c)) } // *B=*C
+		102 { z.m_set(z.b, u8(z.h_get(z.d))) } // *B=*D
+		103 { z.m_set(z.b, u8(operand)) } // *B=N
+		104 { z.m_set(z.c, u8(z.a)) } // *C=A
+		105 { z.m_set(z.c, u8(z.b)) } // *C=B
+		106 { z.m_set(z.c, u8(z.c)) } // *C=C
+		107 { z.m_set(z.c, u8(z.d)) } // *C=D
+		108 { z.m_set(z.c, z.m_get(z.b)) } // *C=*B
+		109 { /* *C=*C */ }
+		110 { z.m_set(z.c, u8(z.h_get(z.d))) } // *C=*D
+		111 { z.m_set(z.c, u8(operand)) } // *C=N
+		112 { z.h_set(z.d, z.a) } // *D=A
+		113 { z.h_set(z.d, z.b) } // *D=B
+		114 { z.h_set(z.d, z.c) } // *D=C
+		115 { z.h_set(z.d, z.d) } // *D=D
+		116 { z.h_set(z.d, u32(z.m_get(z.b))) } // *D=*B
+		117 { z.h_set(z.d, u32(z.m_get(z.c))) } // *D=*C
+		118 { /* *D=*D */ }
+		119 { z.h_set(z.d, u32(operand)) } // *D=N
+		// Arithmetic opcodes 128-167
+		128 { z.a += z.a } // A+=A
+		129 { z.a += z.b } // A+=B
+		130 { z.a += z.c } // A+=C
+		131 { z.a += z.d } // A+=D
+		132 { z.a += u32(z.m_get(z.b)) } // A+=*B
+		133 { z.a += u32(z.m_get(z.c)) } // A+=*C
+		134 { z.a += z.h_get(z.d) } // A+=*D
+		135 { z.a += u32(operand) } // A+=N
+		136 { z.a -= z.a } // A-=A
+		137 { z.a -= z.b } // A-=B
+		138 { z.a -= z.c } // A-=C
+		139 { z.a -= z.d } // A-=D
+		140 { z.a -= u32(z.m_get(z.b)) } // A-=*B
+		141 { z.a -= u32(z.m_get(z.c)) } // A-=*C
+		142 { z.a -= z.h_get(z.d) } // A-=*D
+		143 { z.a -= u32(operand) } // A-=N
+		144 { z.a *= z.a } // A*=A
+		145 { z.a *= z.b } // A*=B
+		146 { z.a *= z.c } // A*=C
+		147 { z.a *= z.d } // A*=D
+		148 { z.a *= u32(z.m_get(z.b)) } // A*=*B
+		149 { z.a *= u32(z.m_get(z.c)) } // A*=*C
+		150 { z.a *= z.h_get(z.d) } // A*=*D
+		151 { z.a *= u32(operand) } // A*=N
+		152 { if z.a != 0 { z.a = z.a / z.a } } // A/=A
+		153 { if z.b != 0 { z.a /= z.b } } // A/=B
+		154 { if z.c != 0 { z.a /= z.c } } // A/=C
+		155 { if z.d != 0 { z.a /= z.d } } // A/=D
+		156 { t := u32(z.m_get(z.b)); if t != 0 { z.a /= t } } // A/=*B
+		157 { t := u32(z.m_get(z.c)); if t != 0 { z.a /= t } } // A/=*C
+		158 { t := z.h_get(z.d); if t != 0 { z.a /= t } } // A/=*D
+		159 { if operand != 0 { z.a /= u32(operand) } } // A/=N
+		160 { if z.a != 0 { z.a = z.a % z.a } } // A%=A
+		161 { if z.b != 0 { z.a %= z.b } } // A%=B
+		162 { if z.c != 0 { z.a %= z.c } } // A%=C
+		163 { if z.d != 0 { z.a %= z.d } } // A%=D
+		164 { t := u32(z.m_get(z.b)); if t != 0 { z.a %= t } } // A%=*B
+		165 { t := u32(z.m_get(z.c)); if t != 0 { z.a %= t } } // A%=*C
+		166 { t := z.h_get(z.d); if t != 0 { z.a %= t } } // A%=*D
+		167 { if operand != 0 { z.a %= u32(operand) } } // A%=N
+		// Bitwise opcodes 168-199
+		168 { z.a &= z.a } // A&=A
+		169 { z.a &= z.b } // A&=B
+		170 { z.a &= z.c } // A&=C
+		171 { z.a &= z.d } // A&=D
+		172 { z.a &= u32(z.m_get(z.b)) } // A&=*B
+		173 { z.a &= u32(z.m_get(z.c)) } // A&=*C
+		174 { z.a &= z.h_get(z.d) } // A&=*D
+		175 { z.a &= u32(operand) } // A&=N
+		176 { z.a &= ~z.a } // A&~A
+		177 { z.a &= ~z.b } // A&~B
+		178 { z.a &= ~z.c } // A&~C
+		179 { z.a &= ~z.d } // A&~D
+		180 { z.a &= ~u32(z.m_get(z.b)) } // A&~*B
+		181 { z.a &= ~u32(z.m_get(z.c)) } // A&~*C
+		182 { z.a &= ~z.h_get(z.d) } // A&~*D
+		183 { z.a &= ~u32(operand) } // A&~N
+		184 { z.a |= z.a } // A|=A
+		185 { z.a |= z.b } // A|=B
+		186 { z.a |= z.c } // A|=C
+		187 { z.a |= z.d } // A|=D
+		188 { z.a |= u32(z.m_get(z.b)) } // A|=*B
+		189 { z.a |= u32(z.m_get(z.c)) } // A|=*C
+		190 { z.a |= z.h_get(z.d) } // A|=*D
+		191 { z.a |= u32(operand) } // A|=N
+		192 { z.a ^= z.a } // A^=A
+		193 { z.a ^= z.b } // A^=B
+		194 { z.a ^= z.c } // A^=C
+		195 { z.a ^= z.d } // A^=D
+		196 { z.a ^= u32(z.m_get(z.b)) } // A^=*B
+		197 { z.a ^= u32(z.m_get(z.c)) } // A^=*C
+		198 { z.a ^= z.h_get(z.d) } // A^=*D
+		199 { z.a ^= u32(operand) } // A^=N
+		// Shift opcodes 200-215
+		200 { z.a <<= (z.a & 31) } // A<<=A
+		201 { z.a <<= (z.b & 31) } // A<<=B
+		202 { z.a <<= (z.c & 31) } // A<<=C
+		203 { z.a <<= (z.d & 31) } // A<<=D
+		204 { z.a <<= (u32(z.m_get(z.b)) & 31) } // A<<=*B
+		205 { z.a <<= (u32(z.m_get(z.c)) & 31) } // A<<=*C
+		206 { z.a <<= (z.h_get(z.d) & 31) } // A<<=*D
+		207 { z.a <<= (u32(operand) & 31) } // A<<=N
+		208 { z.a >>= (z.a & 31) } // A>>=A
+		209 { z.a >>= (z.b & 31) } // A>>=B
+		210 { z.a >>= (z.c & 31) } // A>>=C
+		211 { z.a >>= (z.d & 31) } // A>>=D
+		212 { z.a >>= (u32(z.m_get(z.b)) & 31) } // A>>=*B
+		213 { z.a >>= (u32(z.m_get(z.c)) & 31) } // A>>=*C
+		214 { z.a >>= (z.h_get(z.d) & 31) } // A>>=*D
+		215 { z.a >>= (u32(operand) & 31) } // A>>=N
+		// Comparison opcodes 216-239
+		216 { z.f = 1 } // A==A (always true)
+		217 { z.f = if z.a == z.b { 1 } else { 0 } } // A==B
+		218 { z.f = if z.a == z.c { 1 } else { 0 } } // A==C
+		219 { z.f = if z.a == z.d { 1 } else { 0 } } // A==D
+		220 { z.f = if z.a == u32(z.m_get(z.b)) { 1 } else { 0 } } // A==*B
+		221 { z.f = if z.a == u32(z.m_get(z.c)) { 1 } else { 0 } } // A==*C
+		222 { z.f = if z.a == z.h_get(z.d) { 1 } else { 0 } } // A==*D
+		223 { z.f = if z.a == u32(operand) { 1 } else { 0 } } // A==N
+		224 { z.f = 0 } // A<A (always false)
+		225 { z.f = if z.a < z.b { 1 } else { 0 } } // A<B
+		226 { z.f = if z.a < z.c { 1 } else { 0 } } // A<C
+		227 { z.f = if z.a < z.d { 1 } else { 0 } } // A<D
+		228 { z.f = if z.a < u32(z.m_get(z.b)) { 1 } else { 0 } } // A<*B
+		229 { z.f = if z.a < u32(z.m_get(z.c)) { 1 } else { 0 } } // A<*C
+		230 { z.f = if z.a < z.h_get(z.d) { 1 } else { 0 } } // A<*D
+		231 { z.f = if z.a < u32(operand) { 1 } else { 0 } } // A<N
+		232 { z.f = 0 } // A>A (always false)
+		233 { z.f = if z.a > z.b { 1 } else { 0 } } // A>B
+		234 { z.f = if z.a > z.c { 1 } else { 0 } } // A>C
+		235 { z.f = if z.a > z.d { 1 } else { 0 } } // A>D
+		236 { z.f = if z.a > u32(z.m_get(z.b)) { 1 } else { 0 } } // A>*B
+		237 { z.f = if z.a > u32(z.m_get(z.c)) { 1 } else { 0 } } // A>*C
+		238 { z.f = if z.a > z.h_get(z.d) { 1 } else { 0 } } // A>*D
+		239 { z.f = if z.a > u32(operand) { 1 } else { 0 } } // A>N
+		255 { // LJ (long jump)
+			z.pc = z.hbegin + int(z.header[z.pc - 2]) + int(z.header[z.pc - 1]) * 256
+			if z.pc >= z.hend {
+				return false
+			}
 		}
-		56 {
-			// ERROR
+		else {
+			// Unknown opcode - error
 			return false
 		}
-		57...63 {
-			// Extended ops
-			if op == 63 {
-				// JMP N
-				z.pc += operand
-			}
-		}
-		64...255 {
-			// A = R[N] and other register ops
-			if op >= 64 && op < 128 {
-				idx := int(op - 64)
-				if idx < 256 {
-					z.a = z.r[idx]
-				}
-			} else if op >= 128 && op < 192 {
-				// Store to register
-				idx := int(op - 128)
-				if idx < 256 {
-					z.r[idx] = z.a
-				}
-			} else if op >= 192 {
-				// H operations
-				idx := int(op - 192)
-				if idx < z.h.len {
-					z.a = z.h[idx]
-				}
-			}
-		}
-		else {}
 	}
 
 	return true
