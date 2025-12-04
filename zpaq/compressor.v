@@ -317,10 +317,17 @@ pub fn (mut c Compressor) compress(n int) bool {
 }
 
 // Store mode compression (level 0) - no compression, just store with length prefix
-// libzpaq format: 4-byte big-endian length + raw data, repeated. Length 0 = end.
+// libzpaq format: 4-byte big-endian length + PP mode + raw data, repeated. Length 0 = end.
 fn (mut c Compressor) compress_store(n int) bool {
 	if c.input == unsafe { nil } || c.output == unsafe { nil } {
 		return false
+	}
+
+	// Write PP mode (0=PASS) at start of first chunk
+	if c.first_byte {
+		c.store_buf << 0 // PP mode = PASS
+		c.store_size++
+		c.first_byte = false
 	}
 
 	mut count := 0

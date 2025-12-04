@@ -36,13 +36,15 @@ pub fn get_compression_level(level int) CompressionLevel {
 }
 
 // Level 0: Store (no compression)
-// Simple pass-through with no context model
+// Matches libzpaq's "comp 0 0 0 0 0 hcomp end" format
 fn level_0_store() CompressionLevel {
 	return CompressionLevel{
-		name:  'store'
-		hcomp: []u8{}
-		hh:    0
-		hm:    0
+		name: 'store'
+		// Header: hm=0 hh=0 ph=0 pm=0 n=0 0 0
+		// This is the minimal header with no components and no HCOMP code
+		hcomp: [u8(0), 0, 0, 0, 0, 0, 0]
+		hh:   0
+		hm:   0
 	}
 }
 

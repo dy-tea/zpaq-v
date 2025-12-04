@@ -432,6 +432,18 @@ fn (mut d Decompresser) decompress_store(n int) bool {
 			if d.store_count == 0 {
 				return false
 			}
+
+			// Handle PP mode byte at start of first chunk
+			if d.first_seg {
+				pp_mode := d.input.get()
+				if pp_mode < 0 {
+					return false
+				}
+				d.store_count-- // PP mode byte is counted in length
+				// pp_mode == 0 means PASS (no post-processing)
+				// pp_mode == 1 would mean PCOMP program follows (not supported in store mode)
+				d.first_seg = false
+			}
 		}
 
 		// Read one byte from current chunk
