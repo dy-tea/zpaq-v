@@ -159,34 +159,39 @@ pub fn (mut d Decoder) skip() int {
 	// read from input until we see 4 zeros, then return the byte after
 	mut curr := d.code // current 4-byte window
 
-	// If at start (curr == 0), read first byte
-	for curr == 0 {
+	// If at start (curr == 0), read first byte to initialize the window
+	// This handles the edge case where we start at an empty state
+	if curr == 0 {
 		c := d.get()
 		if c < 0 {
-			return -1
+			return -1 // EOF
 		}
 		curr = u32(c)
 	}
 
-	// Read until we find 4 consecutive zeros
+	// Read until we find 4 consecutive zeros (curr == 0)
 	mut c := 0
 	for curr != 0 {
 		c = d.get()
 		if c < 0 {
-			return -1
+			return -1 // EOF - stream ended without finding 4 zeros
 		}
 		curr = (curr << 8) | u32(c)
 	}
 
 	// Skip any additional zeros (there might be more than 4)
+	// and return the first non-zero byte (segment end marker)
 	for {
 		c = d.get()
+		if c < 0 {
+			return -1 // EOF - stream ended without finding segment marker
+		}
 		if c != 0 {
 			break
 		}
 	}
 
-	// Return the first non-zero byte (segment end marker)
+	// Return the segment end marker (should be 253 or 254)
 	return c
 }
 
