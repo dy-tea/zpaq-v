@@ -101,6 +101,8 @@ pub fn (mut d Decoder) decode(p int) int {
 		d.low <<= 8
 		d.high = (d.high << 8) | 0xFF
 		// Prevent decoding issues with 4 zero bytes (libzpaq compatibility)
+		// When low becomes 0, set it to 1 to maintain valid range coding
+		// This matches libzpaq: low+=(low==0)
 		if d.low == 0 {
 			d.low = 1
 		}

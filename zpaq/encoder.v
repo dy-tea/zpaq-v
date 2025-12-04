@@ -80,6 +80,8 @@ pub fn (mut e Encoder) encode(y int, p int) {
 		e.low <<= 8
 		e.high = (e.high << 8) | 0xFF
 		// Prevent coding 4 zero bytes in a row (libzpaq compatibility)
+		// When low becomes 0, set it to 1 to maintain valid range coding
+		// This matches libzpaq: low+=(low==0)
 		if e.low == 0 {
 			e.low = 1
 		}
