@@ -264,6 +264,12 @@ jobs:
           $ORIGINAL_ZPAQ l /tmp/src.zpaq
           
           echo ""
+          echo "Note: File sizes show as -1 in streaming format archives."
+          echo "This is expected behavior - streaming archives store fragment sizes"
+          echo "differently from journaling archives. Extraction works correctly."
+          echo ""
+          
+          echo ""
           echo "Extracting with original zpaq:"
           rm -rf /tmp/src-extract
           mkdir -p /tmp/src-extract
@@ -274,20 +280,28 @@ jobs:
               echo "Extracted files:"
               find /tmp/src-extract -type f | head -20
               
-              # Verify at least some files match
+              # Verify file contents AND sizes match
               echo ""
-              echo "Verifying file contents..."
+              echo "Verifying file contents and sizes..."
               VERIFIED=0
               FAILED=0
               for file in zpaq/*.v; do
                   basename=$(basename "$file")
+                  # Use wc -c for portable size calculation
+                  original_size=$(wc -c < "$file")
                   extracted_file=$(find /tmp/src-extract -name "$basename" -type f | head -1)
                   if [ -n "$extracted_file" ]; then
+                      extracted_size=$(wc -c < "$extracted_file")
                       if diff -q "$file" "$extracted_file" >/dev/null 2>&1; then
-                          echo "  ✓ $basename: OK"
-                          VERIFIED=$((VERIFIED + 1))
+                          if [ "$original_size" = "$extracted_size" ]; then
+                              echo "  ✓ $basename: OK (size: $original_size bytes)"
+                              VERIFIED=$((VERIFIED + 1))
+                          else
+                              echo "  ✗ $basename: SIZE MISMATCH (original: $original_size, extracted: $extracted_size)"
+                              FAILED=$((FAILED + 1))
+                          fi
                       else
-                          echo "  ✗ $basename: MISMATCH"
+                          echo "  ✗ $basename: CONTENT MISMATCH"
                           FAILED=$((FAILED + 1))
                       fi
                   else
@@ -303,6 +317,9 @@ jobs:
                   echo "ERROR: Some files failed verification!"
                   exit 1
               fi
+              
+              echo ""
+              echo "✓ All extracted files have correct content and sizes!"
           else
               echo ""
               echo "✗ Extraction failed!"
@@ -321,9 +338,14 @@ jobs:
           echo "✓ Store mode (level 0) bidirectionally compatible with libzpaq"
           echo "✓ V round-trip works for all supported levels"
           echo "✓ Source archive (zpaq/) extractable by original zpaq"
+          echo "✓ Extracted files have correct content and sizes"
           echo ""
           echo "Implementation Status:"
           echo "- Store mode (level 0): Compatible with original zpaq"
           echo "- Compressed mode (level 1+): V round-trip working"
           echo "- Block format: Compatible with libzpaq rolling hash detection"
           echo "- Segment format: Compatible with libzpaq"
+          echo ""
+          echo "Note: The V implementation creates streaming format archives."
+          echo "File sizes show as -1 in 'zpaq l' listings (expected for streaming format),"
+          echo "but files extract with correct content and sizes."
