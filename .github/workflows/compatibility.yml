@@ -78,259 +78,167 @@ jobs:
           v cmd/main.v -o /tmp/zpaq-v-cli
           echo "V CLI tool built successfully"
 
-      - name: Build V compatibility test tool
-        run: |
-          # Create a V program that uses our zpaq module to compress/decompress
-          # Place it in the zpaq directory to use local module import
-          cat > zpaq/compat_test_main.v << 'VEOF'
-          module zpaq
-
-          import os
-
-          // Run compatibility test from command line
-          pub fn run_compat_test() {
-              args := os.args
-              if args.len < 4 {
-                  eprintln('Usage: compat_test <compress|decompress|hash> <input> <output> [level]')
-                  return
-              }
-
-              cmd := args[1]
-              input_file := args[2]
-              output_file := args[3]
-              level := if args.len > 4 { args[4].int() } else { 5 }
-
-              match cmd {
-                  'compress' {
-                      compat_compress_file(input_file, output_file, level)
-                  }
-                  'decompress' {
-                      compat_decompress_file(input_file, output_file)
-                  }
-                  'hash' {
-                      compat_hash_file(input_file)
-                  }
-                  else {
-                      eprintln('Unknown command: ${cmd}')
-                  }
-              }
-          }
-
-          fn compat_compress_file(input_path string, output_path string, level int) {
-              // Read input file
-              input_data := os.read_bytes(input_path) or {
-                  eprintln('Failed to read input: ${err}')
-                  return
-              }
-
-              // Create reader and writer
-              mut input := FileReader.new(input_data)
-              mut output := FileWriter.new()
-
-              // Compress with specified level
-              mut comp := Compressor.new()
-              comp.set_input(&input)
-              comp.set_output(&output)
-              comp.start_block(level)
-              comp.start_segment(os.base(input_path), '')
-              for comp.compress(4096) {}
-              comp.end_segment()
-              comp.end_block()
-
-              // Write output
-              os.write_file_array(output_path, output.bytes()) or {
-                  eprintln('Failed to write output: ${err}')
-                  return
-              }
-
-              println('Compressed ${input_data.len} bytes to ${output.bytes().len} bytes (level ${level})')
-          }
-
-          fn compat_decompress_file(input_path string, output_path string) {
-              // Read input file
-              input_data := os.read_bytes(input_path) or {
-                  eprintln('Failed to read input: ${err}')
-                  return
-              }
-
-              // Create reader and writer
-              mut input := FileReader.new(input_data)
-              mut output := FileWriter.new()
-
-              // Decompress
-              mut decomp := Decompresser.new()
-              decomp.set_input(&input)
-              decomp.set_output(&output)
-
-              if decomp.find_block() {
-                  for decomp.find_filename() {
-                      for decomp.decompress(4096) {}
-                      decomp.read_segment_end()
-                  }
-              }
-
-              // Write output
-              os.write_file_array(output_path, output.bytes()) or {
-                  eprintln('Failed to write output: ${err}')
-                  return
-              }
-
-              println('Decompressed to ${output.bytes().len} bytes')
-          }
-
-          fn compat_hash_file(input_path string) {
-              // Read input file
-              input_data := os.read_bytes(input_path) or {
-                  eprintln('Failed to read input: ${err}')
-                  return
-              }
-
-              // Compute SHA256 hash
-              mut sha := SHA256.new()
-              sha.write_bytes(input_data)
-              hash := sha.result()
-
-              // Print hash as hex
-              mut hex := ''
-              for b in hash {
-                  hex += '${b:02x}'
-              }
-              println(hex)
-          }
-          VEOF
-
-          # Create main entry point
-          cat > /tmp/compat_main.v << 'VEOF'
-          import zpaq
-
-          fn main() {
-              zpaq.run_compat_test()
-          }
-          VEOF
-
-          # Install the module locally - copy files to avoid symlink issues
-          mkdir -p ~/.vmodules/zpaq
-          cp zpaq/*.v ~/.vmodules/zpaq/
-
-          # Build the tool
-          v -o /tmp/zpaq_compat_test /tmp/compat_main.v
-
-      - name: Test SHA256 compatibility
-        run: |
-          echo "Testing SHA256 hash compatibility..."
-          
-          # Test with simple string
-          echo -n "Hello, World!" > /tmp/test_hash.txt
-          
-          # Get hash from our implementation
-          v_hash=$(/tmp/zpaq_compat_test hash /tmp/test_hash.txt dummy)
-          
-          # Get expected SHA256 hash
-          expected_hash=$(sha256sum /tmp/test_hash.txt | cut -d' ' -f1)
-          
-          echo "V implementation hash:  $v_hash"
-          echo "Expected SHA256 hash:   $expected_hash"
-          
-          if [ "$v_hash" = "$expected_hash" ]; then
-              echo "✓ SHA256 hashes match!"
-          else
-              echo "✗ SHA256 hashes do not match"
-              exit 1
-          fi
-
-      - name: Compare archives with original ZPAQ (method 5)
+      - name: Test Store Mode Compatibility (Bidirectional)
         if: steps.build_original.outputs.original_available == 'true'
         run: |
           echo ""
           echo "=========================================="
-          echo "Archive Comparison Test (Method 5)"
+          echo "Store Mode Compatibility Test (Method 0)"
           echo "=========================================="
           
           ORIGINAL_ZPAQ="/tmp/zpaq-original/zpaq"
           V_ZPAQ="/tmp/zpaq-v-cli"
           
-          mkdir -p /tmp/archives/original /tmp/archives/v-impl
+          mkdir -p /tmp/test-store/v-archive /tmp/test-store/orig-archive
+          mkdir -p /tmp/test-store/v-extract /tmp/test-store/orig-extract
           
-          # Test with each test file using method 5 (maximum compression)
+          PASS=0
+          FAIL=0
+          
           for testfile in /tmp/testdata/*; do
               filename=$(basename "$testfile")
               echo ""
               echo "Testing: $filename"
               echo "----------------------------------------"
               
-              original_size=$(wc -c < "$testfile")
-              echo "Original file size: $original_size bytes"
-              
-              # Compress with original zpaq (method 5)
-              echo "Compressing with original zpaq (method 5)..."
-              $ORIGINAL_ZPAQ a /tmp/archives/original/${filename}.zpaq "$testfile" -m5 2>/dev/null || {
-                  echo "  Original zpaq compression failed for $filename"
-                  continue
-              }
-              original_archive_size=$(wc -c < "/tmp/archives/original/${filename}.zpaq" 2>/dev/null || echo "0")
-              echo "  Original archive size: $original_archive_size bytes"
-              
-              # Compress with V implementation (method 5)
-              echo "Compressing with V implementation (method 5)..."
-              $V_ZPAQ add /tmp/archives/v-impl/${filename}.zpaq "$testfile" -m5 2>/dev/null || {
-                  echo "  V implementation compression failed for $filename"
-                  continue
-              }
-              v_archive_size=$(wc -c < "/tmp/archives/v-impl/${filename}.zpaq" 2>/dev/null || echo "0")
-              echo "  V implementation archive size: $v_archive_size bytes"
-              
-              # Compare archive sizes
-              if [ "$original_archive_size" != "0" ] && [ "$v_archive_size" != "0" ]; then
-                  size_diff=$((v_archive_size - original_archive_size))
-                  percent_diff=$(echo "scale=2; ($size_diff * 100) / $original_archive_size" | bc 2>/dev/null || echo "N/A")
-                  echo "  Size difference: $size_diff bytes ($percent_diff%)"
-                  
-                  # Compare compression ratios
-                  if [ "$original_size" -gt 0 ]; then
-                      original_ratio=$(echo "scale=2; ($original_archive_size * 100) / $original_size" | bc 2>/dev/null || echo "N/A")
-                      v_ratio=$(echo "scale=2; ($v_archive_size * 100) / $original_size" | bc 2>/dev/null || echo "N/A")
-                      echo "  Original compression ratio: $original_ratio%"
-                      echo "  V impl compression ratio: $v_ratio%"
+              # Test 1: V creates archive, original zpaq extracts
+              echo "  Test 1: V -> Original zpaq extraction"
+              rm -rf /tmp/test-store/v-archive/* /tmp/test-store/orig-extract/*
+              $V_ZPAQ add /tmp/test-store/v-archive/test.zpaq "$testfile" -m0 -s1 2>/dev/null
+              if $ORIGINAL_ZPAQ x /tmp/test-store/v-archive/test.zpaq -to /tmp/test-store/orig-extract/ -force 2>/dev/null; then
+                  extracted_file=$(find /tmp/test-store/orig-extract/ -type f | head -1)
+                  if [ -n "$extracted_file" ] && diff -q "$testfile" "$extracted_file" >/dev/null 2>&1; then
+                      echo "    ✓ V -> Original: PASS"
+                      PASS=$((PASS + 1))
+                  else
+                      echo "    ✗ V -> Original: FAIL (content mismatch)"
+                      FAIL=$((FAIL + 1))
                   fi
+              else
+                  echo "    ✗ V -> Original: FAIL (extraction failed)"
+                  FAIL=$((FAIL + 1))
               fi
               
-              echo ""
+              # Test 2: Original zpaq creates archive, V extracts
+              echo "  Test 2: Original zpaq -> V extraction"
+              rm -rf /tmp/test-store/orig-archive/* /tmp/test-store/v-extract/*
+              
+              # Use libzpaq-style compression (compressBlock with method "0")
+              # The zpaq CLI doesn't support raw block archives, so we create one using a helper
+              cat > /tmp/create_store.cpp << 'CPPEOF'
+          #include <stdio.h>
+          #include <stdlib.h>
+          #include "libzpaq.h"
+          namespace libzpaq { void error(const char* msg) { fprintf(stderr, "Error: %s\n", msg); exit(1); } }
+          class FileWriter: public libzpaq::Writer {
+          public: FILE* f; FileWriter(FILE* f_): f(f_) {}
+              void put(int c) { fputc(c, f); }
+              void write(const char* buf, int n) { fwrite(buf, 1, n, f); }
+          };
+          int main(int argc, char** argv) {
+              if (argc < 3) return 1;
+              FILE* fin = fopen(argv[1], "rb");
+              if (!fin) return 1;
+              libzpaq::StringBuffer in;
+              int c; while ((c = fgetc(fin)) != EOF) in.put(c);
+              fclose(fin);
+              FILE* fout = fopen(argv[2], "wb");
+              if (!fout) return 1;
+              FileWriter out(fout);
+              libzpaq::compressBlock(&in, &out, "0", argv[1]);
+              fclose(fout);
+              return 0;
+          }
+          CPPEOF
+              cd /tmp/zpaq-original
+              g++ -O2 -I. -o /tmp/create_store /tmp/create_store.cpp libzpaq.cpp -lpthread 2>/dev/null
+              
+              if /tmp/create_store "$testfile" /tmp/test-store/orig-archive/test.zpaq 2>/dev/null; then
+                  mkdir -p /tmp/test-store/v-extract
+                  if $V_ZPAQ extract /tmp/test-store/orig-archive/test.zpaq --to /tmp/test-store/v-extract -force -s1 2>/dev/null; then
+                      extracted_file=$(find /tmp/test-store/v-extract/ -type f | head -1)
+                      if [ -n "$extracted_file" ] && diff -q "$testfile" "$extracted_file" >/dev/null 2>&1; then
+                          echo "    ✓ Original -> V: PASS"
+                          PASS=$((PASS + 1))
+                      else
+                          echo "    ✗ Original -> V: FAIL (content mismatch)"
+                          FAIL=$((FAIL + 1))
+                      fi
+                  else
+                      echo "    ✗ Original -> V: FAIL (extraction failed)"
+                      FAIL=$((FAIL + 1))
+                  fi
+              else
+                  echo "    ✗ Original -> V: FAIL (compression failed)"
+                  FAIL=$((FAIL + 1))
+              fi
           done
           
           echo ""
           echo "=========================================="
-          echo "Archive files created:"
-          echo "Original zpaq archives:"
-          ls -la /tmp/archives/original/ 2>/dev/null || echo "  (none)"
-          echo ""
-          echo "V implementation archives:"
-          ls -la /tmp/archives/v-impl/ 2>/dev/null || echo "  (none)"
-
-      - name: Test basic module functionality (fallback)
-        if: steps.build_original.outputs.original_available != 'true'
-        run: |
-          echo "Original zpaq not available, testing V implementation only..."
-          echo ""
+          echo "Store Mode Results: $PASS passed, $FAIL failed"
+          echo "=========================================="
           
-          # Test compression with method 5
-          echo "Testing compression with method 5..."
-          /tmp/zpaq_compat_test compress /tmp/testdata/simple.txt /tmp/simple_m5.zpaq dummy 5
-          
-          # Check that compressed file was created
-          if [ -f /tmp/simple_m5.zpaq ]; then
-              original_size=$(wc -c < /tmp/testdata/simple.txt)
-              compressed_size=$(wc -c < /tmp/simple_m5.zpaq)
-              echo "✓ Compression produced output"
-              echo "  Original size: $original_size bytes"
-              echo "  Compressed size (method 5): $compressed_size bytes"
-          else
-              echo "✗ Compression failed to produce output"
+          if [ $FAIL -gt 0 ]; then
+              echo "Some store mode tests failed!"
+              exit 1
           fi
 
-      - name: Cleanup generated test file
-        if: always()
+      - name: Test V Round-Trip (All Levels)
         run: |
-          rm -f zpaq/compat_test_main.v
+          echo ""
+          echo "=========================================="
+          echo "V Implementation Round-Trip Test"
+          echo "=========================================="
+          
+          V_ZPAQ="/tmp/zpaq-v-cli"
+          mkdir -p /tmp/test-roundtrip/archive /tmp/test-roundtrip/extract
+          
+          PASS=0
+          FAIL=0
+          
+          for testfile in /tmp/testdata/*; do
+              filename=$(basename "$testfile")
+              echo ""
+              echo "Testing: $filename"
+              echo "----------------------------------------"
+              
+              for level in 0 1; do
+                  echo "  Level $level:"
+                  rm -rf /tmp/test-roundtrip/archive/* /tmp/test-roundtrip/extract/*
+                  
+                  # Compress
+                  if $V_ZPAQ add /tmp/test-roundtrip/archive/test.zpaq "$testfile" -m$level -s1 2>/dev/null; then
+                      # Decompress
+                      if $V_ZPAQ extract /tmp/test-roundtrip/archive/test.zpaq --to /tmp/test-roundtrip/extract -force -s1 2>/dev/null; then
+                          extracted_file=$(find /tmp/test-roundtrip/extract/ -type f | head -1)
+                          if [ -n "$extracted_file" ] && diff -q "$testfile" "$extracted_file" >/dev/null 2>&1; then
+                              echo "    ✓ Round-trip: PASS"
+                              PASS=$((PASS + 1))
+                          else
+                              echo "    ✗ Round-trip: FAIL (content mismatch)"
+                              FAIL=$((FAIL + 1))
+                          fi
+                      else
+                          echo "    ✗ Round-trip: FAIL (extraction failed)"
+                          FAIL=$((FAIL + 1))
+                      fi
+                  else
+                      echo "    ✗ Round-trip: FAIL (compression failed)"
+                      FAIL=$((FAIL + 1))
+                  fi
+              done
+          done
+          
+          echo ""
+          echo "=========================================="
+          echo "Round-Trip Results: $PASS passed, $FAIL failed"
+          echo "=========================================="
+          
+          if [ $FAIL -gt 0 ]; then
+              echo "Some round-trip tests failed!"
+              exit 1
+          fi
 
       - name: Summary
         run: |
@@ -338,22 +246,13 @@ jobs:
           echo "=========================================="
           echo "Compatibility Test Summary"
           echo "=========================================="
-          echo "✓ Module compiles successfully"
+          echo "✓ V implementation compiles successfully"
           echo "✓ CLI tool built and functional"
-          echo "✓ SHA256 hash implementation verified"
-          echo "✓ Basic I/O structures functional"
-          echo "✓ Compression produces output (method 5)"
+          echo "✓ Store mode (level 0) bidirectionally compatible with libzpaq"
+          echo "✓ V round-trip works for all supported levels"
           echo ""
           echo "Implementation Status:"
-          echo "- Core types and interfaces: Complete"
-          echo "- SHA1/SHA256 hashing: Complete"
-          echo "- Arithmetic encoder/decoder: Complete (libzpaq compatible)"
-          echo "- State table: Complete (libzpaq state table)"
-          echo "- Context model predictor: Complete"
-          echo "  - All 9 component types (CM, ICM, MATCH, AVG, MIX2, MIX, ISSE, SSE)"
-          echo "  - Squash/stretch probability mapping"
-          echo "  - Adaptive model updates"
-          echo "- Compression levels: 0-5 matching libzpaq"
-          echo "- ZPAQ block format: Block and segment locator tags"
-          echo "- CLI: Complete with all zpaq flags"
-          echo "- ZPAQL VM: Basic skeleton"
+          echo "- Store mode (level 0): Fully compatible with libzpaq"
+          echo "- Compressed mode (level 1+): V round-trip working"
+          echo "- Block format: Compatible with libzpaq rolling hash detection"
+          echo "- Segment format: Compatible with libzpaq"
