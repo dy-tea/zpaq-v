@@ -67,8 +67,9 @@ pub fn (d &Decoder) buffered() bool {
 }
 
 // Decode a bit given probability (libzpaq compatible)
-// p is probability of 1 in range (0..65535)
-// libzpaq uses p=0 for EOF marker decoding
+// p is probability of 1 in range (0..65535), where p/65536 is the actual probability
+// Special case: p=0 is used for EOF marker decoding - this effectively makes
+// y=1 very unlikely (probability 0), which is correct for detecting EOF markers
 pub fn (mut d Decoder) decode(p int) int {
 	// Clamp probability - allow 0 for EOF bit
 	mut pr := p

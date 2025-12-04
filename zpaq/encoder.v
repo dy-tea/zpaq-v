@@ -41,7 +41,9 @@ pub fn (mut e Encoder) set_output(mut output Writer) {
 }
 
 // Encode a bit with given probability (libzpaq compatible)
-// p is probability of 1 in range (0..65535)
+// p is probability of 1 in range (0..65535), where p/65536 is the actual probability
+// Special case: p=0 is used for EOF marker encoding - this effectively makes
+// y=1 very unlikely (probability 0), which is correct for EOF markers
 // Uses 32-bit arithmetic with proper range scaling
 pub fn (mut e Encoder) encode(y int, p int) {
 	// Clamp probability to valid range (0..65535)
