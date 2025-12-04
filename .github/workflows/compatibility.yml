@@ -323,7 +323,7 @@ jobs:
           echo "✓ Source archive (zpaq/) extractable by original zpaq"
           echo ""
           echo "Implementation Status:"
-          echo "- Store mode (level 0): Fully compatible with libzpaq"
+          echo "- Store mode (level 0): Compatible with original zpaq"
           echo "- Compressed mode (level 1+): V round-trip working"
           echo "- Block format: Compatible with libzpaq rolling hash detection"
           echo "- Segment format: Compatible with libzpaq"

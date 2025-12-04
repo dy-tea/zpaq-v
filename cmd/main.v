@@ -284,7 +284,8 @@ fn run_add(cfg Config) ! {
 	comp.set_output(&output)
 
 	// Add each file - each file is a separate block for compatibility with original zpaq
-	// In streaming mode, zpaq expects one file per block
+	// The original zpaq tool expects streaming archives to have one file per block,
+	// otherwise extraction fails with checksum errors
 	for file in files_to_add {
 		data := os.read_bytes(file) or {
 			eprintln("Warning: Could not read '${file}': ${err}, skipping")
@@ -299,7 +300,7 @@ fn run_add(cfg Config) ! {
 
 		// Use relative path or just filename
 		filename := os.base(file)
-		// Comment contains the uncompressed file size (required by zpaq format for extraction)
+		// Comment contains the uncompressed file size (required by original zpaq for streaming archive extraction)
 		file_size_comment := data.len.str()
 		comp.start_segment(filename, file_size_comment)
 
