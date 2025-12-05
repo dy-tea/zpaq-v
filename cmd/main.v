@@ -279,42 +279,26 @@ fn run_add(cfg Config) ! {
 		output.put(int(b))
 	}
 
-	// Create compressor
-	mut comp := zpaq.Compressor.new()
-	comp.set_output(&output)
-
-	// Add each file - each file is a separate block for compatibility with original zpaq
-	// The original zpaq tool expects streaming archives to have one file per block,
-	// otherwise extraction fails with checksum errors
+	// Use JIDAC journaling format for proper file size tracking
+	mut jidac := zpaq.JidacArchive.new()
+	jidac.set_output(&output)
+	
+	// Collect file data
+	mut file_data := map[string][]u8{}
 	for file in files_to_add {
 		data := os.read_bytes(file) or {
 			eprintln("Warning: Could not read '${file}': ${err}, skipping")
 			continue
 		}
-
-		mut input := zpaq.FileReader.new(data)
-		comp.set_input(&input)
-
-		// Start a new block for this file
-		comp.start_block(cfg.method)
-
-		// Use relative path or just filename
 		filename := os.base(file)
-		// Comment contains the uncompressed file size (required by original zpaq for streaming archive extraction)
-		file_size_comment := data.len.str()
-		comp.start_segment(filename, file_size_comment)
-
-		// Compress in chunks
-		for comp.compress(65536) {
-		}
-
-		comp.end_segment()
-		comp.end_block()
-
+		file_data[filename] = data
 		if cfg.summary > 0 {
 			println('Added: ${file}')
 		}
 	}
+	
+	// Create JIDAC archive with all files
+	jidac.create_archive(file_data, cfg.method)
 
 	// Write archive
 	os.write_file_array(archive, output.bytes()) or {
