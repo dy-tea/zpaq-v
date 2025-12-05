@@ -7,7 +7,7 @@ import time
 
 // JIDAC block types
 const jidac_type_c = `c` // Transaction header
-const jidac_type_d = `d` // Data block  
+const jidac_type_d = `d` // Data block
 const jidac_type_h = `h` // Fragment table (hash + size)
 const jidac_type_i = `i` // Index (file metadata)
 
@@ -239,7 +239,9 @@ pub fn (mut a JidacArchive) create_archive(files map[string][]u8, method int) {
 		h_content << put_u32_le_bytes(blk.csize)
 		
 		// Write fragment SHA1 and size
-		for i := int(blk.start_frag) - 1; i < int(blk.start_frag) - 1 + int(blk.frag_count); i++ {
+		start_idx := int(blk.start_frag) - 1
+		end_idx := start_idx + int(blk.frag_count)
+		for i := start_idx; i < end_idx; i++ {
 			if i >= 0 && i < a.fragments.len {
 				frag := a.fragments[i]
 				// Write 20-byte SHA1
