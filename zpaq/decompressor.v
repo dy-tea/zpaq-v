@@ -136,15 +136,15 @@ pub fn (mut pp PostProcessor) write(c int) int {
 		}
 		5 {
 			// PROG mode - running PCOMP program
-			pp.z.run(u32(c))
-			if c < 0 {
+			// Don't process EOF marker (c < 0) through ZPAQL VM
+			if c >= 0 {
+				pp.z.run(u32(c))
+				// Copy output to buffer
+				for b in pp.z.outbuf {
+					pp.outbuf << b
+				}
 				pp.z.flush()
 			}
-			// Copy output to buffer
-			for b in pp.z.outbuf {
-				pp.outbuf << b
-			}
-			pp.z.flush()
 		}
 		else {}
 	}
