@@ -9,12 +9,15 @@ const decomp_state_filename = 2 // reading filename
 const decomp_state_start = 3 // at start
 
 // PostProcessor executes PCOMP program on decompressed data
+// State machine: (PASS=0 | PROG=1 psize[0..1] pcomp[0..psize-1]) data... EOB=-1
+// States: 0=initial, 1=PASS, 2=PROG size low, 3=PROG size high, 4=loading PROG, 5=running PROG
 pub struct PostProcessor {
 mut:
 	z      ZPAQL // PCOMP ZPAQL VM
-	state  int   // decoder state
-	ph     int   // low bits of c
-	pm     int   // high bits of c
+	state  int   // decoder state (0-5)
+	hsize  int   // PCOMP header size
+	ph     int   // ph from block header (header[4])
+	pm     int   // pm from block header (header[5])
 	outbuf []u8  // output buffer
 }
 
@@ -23,32 +26,134 @@ pub fn PostProcessor.new() PostProcessor {
 	return PostProcessor{
 		z:      ZPAQL.new()
 		state:  0
+		hsize:  0
 		ph:     0
 		pm:     0
 		outbuf: []u8{}
 	}
 }
 
-// Initialize post processor
-pub fn (mut pp PostProcessor) init(z &ZPAQL) {
-	pp.z.header = z.header.clone()
-	pp.z.inith()
-	pp.z.initp()
+// Initialize post processor with ph, pm from block header
+pub fn (mut pp PostProcessor) init(ph int, pm int) {
 	pp.state = 0
-	pp.ph = 0
-	pp.pm = 0
+	pp.hsize = 0
+	pp.ph = ph
+	pp.pm = pm
+	pp.z.clear()
 }
 
-// Process one byte through PCOMP
-pub fn (mut pp PostProcessor) process(c int) {
-	// Run PCOMP program with input byte
-	pp.z.run(u32(c))
-
-	// Copy output
-	for b in pp.z.outbuf {
-		pp.outbuf << b
+// Initialize from ZPAQL header (legacy method)
+pub fn (mut pp PostProcessor) init_from_zpaql(z &ZPAQL) {
+	if z.header.len >= 6 {
+		pp.init(int(z.header[4]), int(z.header[5]))
+	} else {
+		pp.init(0, 0)
 	}
-	pp.z.flush()
+}
+
+// Write one byte to post processor
+// Returns current state: 1=PASS, 2..4=loading PROG, 5=PROG loaded
+pub fn (mut pp PostProcessor) write(c int) int {
+	match pp.state {
+		0 {
+			// Initial state - read mode byte
+			if c < 0 {
+				return pp.state // Unexpected EOS
+			}
+			pp.state = c + 1 // 1=PASS, 2=PROG
+			if pp.state > 2 {
+				pp.state = 1 // Unknown type, default to PASS
+			}
+			if pp.state == 1 {
+				pp.z.clear()
+			}
+		}
+		1 {
+			// PASS mode - direct output
+			// Don't output EOF marker (c < 0)
+			if c >= 0 {
+				pp.z.outc(c)
+				// Copy output to buffer
+				for b in pp.z.outbuf {
+					pp.outbuf << b
+				}
+				pp.z.flush()
+			}
+		}
+		2 {
+			// PROG mode - read low byte of pcomp size
+			if c < 0 {
+				return pp.state
+			}
+			pp.hsize = c
+			pp.state = 3
+		}
+		3 {
+			// PROG mode - read high byte of pcomp size
+			if c < 0 {
+				return pp.state
+			}
+			pp.hsize += c * 256
+			if pp.hsize < 1 {
+				pp.state = 1 // Empty PCOMP, fall back to PASS
+				return pp.state
+			}
+			// Initialize header for PCOMP
+			pp.z.header = []u8{len: pp.hsize + 300}
+			pp.z.cend = 8
+			pp.z.hbegin = pp.z.cend + 128
+			pp.z.hend = pp.z.hbegin
+			if pp.z.header.len > 4 {
+				pp.z.header[4] = u8(pp.ph)
+			}
+			if pp.z.header.len > 5 {
+				pp.z.header[5] = u8(pp.pm)
+			}
+			pp.state = 4
+		}
+		4 {
+			// PROG mode - loading PCOMP bytes
+			if c < 0 {
+				return pp.state
+			}
+			if pp.z.hend < pp.z.header.len {
+				pp.z.header[pp.z.hend] = u8(c)
+				pp.z.hend++
+			}
+			// Check if we've loaded all PCOMP bytes
+			if pp.z.hend - pp.z.hbegin == pp.hsize {
+				// Finalize header
+				hsize_total := pp.z.cend - 2 + pp.z.hend - pp.z.hbegin
+				if pp.z.header.len > 0 {
+					pp.z.header[0] = u8(hsize_total & 255)
+				}
+				if pp.z.header.len > 1 {
+					pp.z.header[1] = u8(hsize_total >> 8)
+				}
+				pp.z.initp()
+				pp.state = 5
+			}
+		}
+		5 {
+			// PROG mode - running PCOMP program
+			// Don't process EOF marker (c < 0) through ZPAQL VM
+			if c >= 0 {
+				pp.z.run(u32(c))
+				// Copy output to buffer
+				for b in pp.z.outbuf {
+					pp.outbuf << b
+				}
+				pp.z.flush()
+			}
+		}
+		else {}
+	}
+	return pp.state
+}
+
+// Get current state
+pub fn (pp &PostProcessor) get_state() int {
+	return pp.state
 }
 
 // Get output buffer
@@ -345,35 +450,31 @@ pub fn (mut d Decompresser) decompress(n int) bool {
 		return d.decompress_store(n)
 	}
 
-	// On first call, read and handle post-processing mode
-	// The first byte of the compressed data is the PP mode:
-	// 0 = PASS (no post-processing)
-	// 1 = PROG (has a post-processing program)
+	// Initialize PostProcessor on first segment
 	if d.first_seg {
-		pp_mode := d.dec.decompress()
-		if pp_mode < 0 {
-			return false
+		// Get ph, pm from header
+		mut ph := 0
+		mut pm := 0
+		if d.z.header.len >= 5 {
+			ph = int(d.z.header[4])
 		}
-		if pp_mode == 1 {
-			// PROG mode: read PCOMP size and skip the program
-			// We don't support PCOMP yet, just skip it
-			psize_lo := d.dec.decompress()
-			psize_hi := d.dec.decompress()
-			if psize_lo < 0 || psize_hi < 0 {
-				return false
-			}
-			psize := psize_lo + psize_hi * 256
-			for i := 0; i < psize; i++ {
-				if d.dec.decompress() < 0 {
-					return false
-				}
-			}
+		if d.z.header.len >= 6 {
+			pm = int(d.z.header[5])
 		}
-		// pp_mode == 0 means PASS, no additional data to read
+		d.pp.init(ph, pm)
 		d.first_seg = false
 	}
 
-	// Compressed mode
+	// Feed bytes through PostProcessor until it's ready (state == 1 or 5)
+	for (d.pp.get_state() & 3) != 1 {
+		c := d.dec.decompress()
+		if c < 0 {
+			return false
+		}
+		d.pp.write(c)
+	}
+
+	// Compressed mode with PostProcessor
 	mut count := 0
 	mut limit := n
 	if limit < 0 {
@@ -382,20 +483,32 @@ pub fn (mut d Decompresser) decompress(n int) bool {
 
 	for count < limit {
 		c := d.dec.decompress()
+		d.pp.write(c)
+		
 		if c < 0 {
-			// EOF marker reached
+			// EOF marker reached - flush PostProcessor output
+			// Get any remaining output from PostProcessor
+			out := d.pp.get_output()
+			for b in out {
+				d.sha1.put(int(b))
+				if d.output != unsafe { nil } {
+					d.output.put(int(b))
+				}
+			}
+			d.pp.clear_output()
 			return false
 		}
-
-		// Update hash
-		d.sha1.put(c)
-
-		// Write to output
-		if d.output != unsafe { nil } {
-			d.output.put(c)
+		
+		// Get output from PostProcessor
+		out := d.pp.get_output()
+		for b in out {
+			d.sha1.put(int(b))
+			if d.output != unsafe { nil } {
+				d.output.put(int(b))
+			}
+			count++
 		}
-
-		count++
+		d.pp.clear_output()
 	}
 
 	return true

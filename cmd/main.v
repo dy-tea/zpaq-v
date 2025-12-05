@@ -279,38 +279,38 @@ fn run_add(cfg Config) ! {
 		output.put(int(b))
 	}
 
-	// Create compressor
+	// Create compressor for archive
 	mut comp := zpaq.Compressor.new()
 	comp.set_output(&output)
 
-	// Add each file - each file is a separate block for compatibility with original zpaq
-	// The original zpaq tool expects streaming archives to have one file per block,
-	// otherwise extraction fails with checksum errors
+	// Process each file
+	mut files_added := 0
 	for file in files_to_add {
 		data := os.read_bytes(file) or {
 			eprintln("Warning: Could not read '${file}': ${err}, skipping")
 			continue
 		}
 
-		mut input := zpaq.FileReader.new(data)
-		comp.set_input(&input)
+		// Use base filename for segment name
+		filename := os.base(file)
 
-		// Start a new block for this file
+		// Start a new block for each file with the requested compression level
 		comp.start_block(cfg.method)
 
-		// Use relative path or just filename
-		filename := os.base(file)
-		// Comment contains the uncompressed file size (required by original zpaq for streaming archive extraction)
-		file_size_comment := data.len.str()
-		comp.start_segment(filename, file_size_comment)
+		// Start segment with filename and size in comment for compatibility
+		// Comment format: "<size> bytes" for human readability
+		comment := '${data.len} bytes'
+		comp.start_segment(filename, comment)
 
-		// Compress in chunks
-		for comp.compress(65536) {
-		}
+		// Compress the file data
+		mut input := zpaq.FileReader.new(data)
+		comp.set_input(&input)
+		for comp.compress(65536) {}
 
 		comp.end_segment()
 		comp.end_block()
 
+		files_added++
 		if cfg.summary > 0 {
 			println('Added: ${file}')
 		}
@@ -322,7 +322,7 @@ fn run_add(cfg Config) ! {
 	}
 
 	println('Created archive: ${archive}')
-	println('Files added: ${files_to_add.len}')
+	println('Files added: ${files_added}')
 }
 
 // Extract command: extract files from archive
