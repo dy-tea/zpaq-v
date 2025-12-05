@@ -279,26 +279,42 @@ fn run_add(cfg Config) ! {
 		output.put(int(b))
 	}
 
-	// Use JIDAC journaling format for proper file size tracking
-	mut jidac := zpaq.JidacArchive.new()
-	jidac.set_output(&output)
-	
-	// Collect file data
-	mut file_data := map[string][]u8{}
+	// Create compressor for archive
+	mut comp := zpaq.Compressor.new()
+	comp.set_output(&output)
+
+	// Process each file
+	mut files_added := 0
 	for file in files_to_add {
 		data := os.read_bytes(file) or {
 			eprintln("Warning: Could not read '${file}': ${err}, skipping")
 			continue
 		}
+
+		// Use base filename for segment name
 		filename := os.base(file)
-		file_data[filename] = data
+
+		// Start a new block for each file with the requested compression level
+		comp.start_block(cfg.method)
+
+		// Start segment with filename and size in comment for compatibility
+		// Comment format: "<size> bytes" for human readability
+		comment := '${data.len} bytes'
+		comp.start_segment(filename, comment)
+
+		// Compress the file data
+		mut input := zpaq.FileReader.new(data)
+		comp.set_input(&input)
+		for comp.compress(65536) {}
+
+		comp.end_segment()
+		comp.end_block()
+
+		files_added++
 		if cfg.summary > 0 {
 			println('Added: ${file}')
 		}
 	}
-	
-	// Create JIDAC archive with all files
-	jidac.create_archive(file_data, cfg.method)
 
 	// Write archive
 	os.write_file_array(archive, output.bytes()) or {
@@ -306,7 +322,7 @@ fn run_add(cfg Config) ! {
 	}
 
 	println('Created archive: ${archive}')
-	println('Files added: ${files_to_add.len}')
+	println('Files added: ${files_added}')
 }
 
 // Extract command: extract files from archive
