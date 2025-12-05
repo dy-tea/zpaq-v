@@ -1,1 +1,0 @@
-Hello, ZPAQ World! This is a test file for compression.
