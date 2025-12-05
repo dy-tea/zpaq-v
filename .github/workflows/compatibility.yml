@@ -254,20 +254,26 @@ jobs:
           ORIGINAL_ZPAQ="/tmp/zpaq-original/zpaq"
           V_ZPAQ="/tmp/zpaq-v-cli"
           
-          # Create src.zpaq from zpaq/ directory using store mode (level 0)
-          # Store mode is fully compatible with the original zpaq
+          # Create src.zpaq from zpaq/ directory
+          # The implementation now uses JIDAC format for proper size tracking
           rm -f /tmp/src.zpaq
-          $V_ZPAQ add /tmp/src.zpaq zpaq/ -m0 -s1
+          $V_ZPAQ add /tmp/src.zpaq zpaq/ -m1 -s1
           
           echo ""
           echo "Archive created. Listing with original zpaq:"
-          $ORIGINAL_ZPAQ l /tmp/src.zpaq
+          LIST_OUTPUT=$($ORIGINAL_ZPAQ l /tmp/src.zpaq 2>&1)
+          echo "$LIST_OUTPUT"
           
           echo ""
-          echo "Note: File sizes show as -1 in streaming format archives."
-          echo "This is expected behavior - streaming archives store fragment sizes"
-          echo "differently from journaling archives. Extraction works correctly."
-          echo ""
+          echo "Verifying file sizes are properly tracked (not -1)..."
+          # Check that no file shows -1 as size (which indicates unknown size)
+          if echo "$LIST_OUTPUT" | grep -E "^\- .* -1 " > /dev/null; then
+              echo "ERROR: Some files have unknown size (-1)!"
+              echo "This indicates JIDAC format is not working correctly."
+              exit 1
+          else
+              echo "✓ All files have known sizes (JIDAC format working)"
+          fi
           
           echo ""
           echo "Extracting with original zpaq:"
@@ -339,13 +345,11 @@ jobs:
           echo "✓ V round-trip works for all supported levels"
           echo "✓ Source archive (zpaq/) extractable by original zpaq"
           echo "✓ Extracted files have correct content and sizes"
+          echo "✓ JIDAC format working - file sizes displayed correctly"
           echo ""
           echo "Implementation Status:"
-          echo "- Store mode (level 0): Compatible with original zpaq"
-          echo "- Compressed mode (level 1+): V round-trip working"
+          echo "- JIDAC journaling format: Implemented"
+          echo "- File sizes in listings: Now shows actual sizes (not -1)"
           echo "- Block format: Compatible with libzpaq rolling hash detection"
           echo "- Segment format: Compatible with libzpaq"
-          echo ""
-          echo "Note: The V implementation creates streaming format archives."
-          echo "File sizes show as -1 in 'zpaq l' listings (expected for streaming format),"
-          echo "but files extract with correct content and sizes."
+          echo "- Extraction: Compatible with original zpaq"
