@@ -15,18 +15,18 @@ const zpaq_block_locator = [u8(0x37), 0x6b, 0x53, 0x74, 0xa0, 0x31, 0x83, 0xd3, 
 // Compressor provides high-level ZPAQ compression
 pub struct Compressor {
 mut:
-	state        int       // current state
-	z            ZPAQL     // ZPAQL VM for HCOMP
-	pz           ZPAQL     // ZPAQL VM for PCOMP
-	enc          Encoder   // arithmetic encoder
-	pr           Predictor // prediction model
-	input        &Reader = unsafe { nil }
-	output       &Writer = unsafe { nil }
-	sha1         SHA1 // SHA1 hash of original uncompressed data for integrity verification
-	level        int  // compression level (0-5)
-	store_buf    []u8 // buffer for store mode
-	store_size   u32  // bytes in store buffer
-	first_byte   bool // true if this is first byte of segment (need to write PP mode)
+	state      int       // current state
+	z          ZPAQL     // ZPAQL VM for HCOMP
+	pz         ZPAQL     // ZPAQL VM for PCOMP
+	enc        Encoder   // arithmetic encoder
+	pr         Predictor // prediction model
+	input      &Reader = unsafe { nil }
+	output     &Writer = unsafe { nil }
+	sha1       SHA1 // SHA1 hash of original uncompressed data for integrity verification
+	level      int  // compression level (0-5)
+	store_buf  []u8 // buffer for store mode
+	store_size u32  // bytes in store buffer
+	first_byte bool // true if this is first byte of segment (need to write PP mode)
 }
 
 // Create a new compressor

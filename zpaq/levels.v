@@ -43,8 +43,8 @@ fn level_0_store() CompressionLevel {
 		// Header format matches libzpaq: hh hm ph pm n [components] 0 [HCOMP code] 0
 		// This is the minimal header with no components and no HCOMP code
 		hcomp: [u8(0), 0, 0, 0, 0, 0, 0]
-		hh:   0 // log2(H array words) = 0, meaning 1 word
-		hm:   0 // log2(M array bytes) = 0, meaning 1 byte
+		hh:    0 // log2(H array words) = 0, meaning 1 word
+		hm:    0 // log2(M array bytes) = 0, meaning 1 byte
 	}
 }
 
@@ -86,8 +86,8 @@ fn level_1_fast() CompressionLevel {
 			56, // halt
 			0, // end of HCOMP
 		]
-		hh: 1 // log2(H array words) = 1, meaning 2 words
-		hm: 2 // log2(M array bytes) = 2, meaning 4 bytes
+		hh:    1 // log2(H array words) = 1, meaning 2 words
+		hm:    2 // log2(M array bytes) = 2, meaning 4 bytes
 	}
 }
 
@@ -95,7 +95,7 @@ fn level_1_fast() CompressionLevel {
 // Order-1,2,3 context chain using ICM + ISSE with proper history tracking
 fn level_2_normal() CompressionLevel {
 	return CompressionLevel{
-		name:  'normal'
+		name: 'normal'
 		// Header format matches libzpaq: hh hm ph pm n [components] 0 [HCOMP code] 0
 		hcomp: [
 			u8(9), // hh = 512 words H array
@@ -149,7 +149,7 @@ fn level_2_normal() CompressionLevel {
 // Longer ISSE chain with order-1 through order-5 contexts
 fn level_3_high() CompressionLevel {
 	return CompressionLevel{
-		name:  'high'
+		name: 'high'
 		// Header format matches libzpaq: hh hm ph pm n [components] 0 [HCOMP code] 0
 		hcomp: [
 			u8(10), // hh = 1024 words H array
@@ -212,7 +212,7 @@ fn level_3_high() CompressionLevel {
 // Deeper ICM+ISSE chain with MIX2 combination
 fn level_4_max() CompressionLevel {
 	return CompressionLevel{
-		name:  'max'
+		name: 'max'
 		// Header format matches libzpaq: hh hm ph pm n [components] 0 [HCOMP code] 0
 		hcomp: [
 			u8(12), // hh = 4K words H array
@@ -289,7 +289,7 @@ fn level_4_max() CompressionLevel {
 // Largest context chain for best compression
 fn level_5_max() CompressionLevel {
 	return CompressionLevel{
-		name:  'ultra'
+		name: 'ultra'
 		// Header format matches libzpaq: hh hm ph pm n [components] 0 [HCOMP code] 0
 		hcomp: [
 			u8(14), // hh = 16K words H array

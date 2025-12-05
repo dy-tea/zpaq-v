@@ -484,7 +484,7 @@ pub fn (mut d Decompresser) decompress(n int) bool {
 	for count < limit {
 		c := d.dec.decompress()
 		d.pp.write(c)
-		
+
 		if c < 0 {
 			// EOF marker reached - flush PostProcessor output
 			// Get any remaining output from PostProcessor
@@ -498,7 +498,7 @@ pub fn (mut d Decompresser) decompress(n int) bool {
 			d.pp.clear_output()
 			return false
 		}
-		
+
 		// Get output from PostProcessor
 		out := d.pp.get_output()
 		for b in out {
@@ -556,8 +556,8 @@ fn (mut d Decompresser) decompress_store(n int) bool {
 				// pp_mode == 0 means PASS (no post-processing)
 				// pp_mode == 1 would mean PCOMP program follows (not supported in store mode)
 				d.first_seg = false
-				
-				// If the current chunk is exhausted after reading PP mode byte, 
+
+				// If the current chunk is exhausted after reading PP mode byte,
 				// continue to read the next chunk length
 				if d.store_count == 0 {
 					continue
