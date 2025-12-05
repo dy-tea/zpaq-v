@@ -70,12 +70,15 @@ pub fn (mut pp PostProcessor) write(c int) int {
 		}
 		1 {
 			// PASS mode - direct output
-			pp.z.outc(c)
-			// Copy output to buffer
-			for b in pp.z.outbuf {
-				pp.outbuf << b
+			// Don't output EOF marker (c < 0)
+			if c >= 0 {
+				pp.z.outc(c)
+				// Copy output to buffer
+				for b in pp.z.outbuf {
+					pp.outbuf << b
+				}
+				pp.z.flush()
 			}
-			pp.z.flush()
 		}
 		2 {
 			// PROG mode - read low byte of pcomp size
